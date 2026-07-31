@@ -33,7 +33,7 @@ import requests
 API_HOST = "api.pirateweather.net"
 FORECAST_BASE = f"https://{API_HOST}/forecast"
 
-assert API_HOST.endswith("pirateweather.net"), (
+assert API_HOST == "api.pirateweather.net", (
     f"Pirate Weather API host looks corrupted: {API_HOST!r}"
 )
 

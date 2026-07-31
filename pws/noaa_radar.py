@@ -27,6 +27,7 @@ import time
 from datetime import datetime, timezone as dt_timezone
 from io import BytesIO
 from typing import List, Optional, Tuple
+from urllib.parse import urlparse
 
 import requests
 from PIL import Image
@@ -41,7 +42,9 @@ EXPORT_URL = f"{SERVICE_BASE}/exportImage"
 ATTRIBUTION = "NOAA / NWS"
 
 #: Guard against a rename mangling the host, as happened once before.
-assert "weather.noaa.gov" in SERVICE_BASE, f"NOAA host looks corrupted: {SERVICE_BASE!r}"
+assert urlparse(SERVICE_BASE).hostname == "mapservices.weather.noaa.gov", (
+    f"NOAA host looks corrupted: {SERVICE_BASE!r}"
+)
 
 _EARTH_CIRCUMFERENCE = 20037508.342789244
 
