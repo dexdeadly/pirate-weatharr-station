@@ -1,0 +1,259 @@
+{
+  "name": "PWS - Pirate Weather Station",
+  "version": "1.0.0",
+  "description": "TV-style weather channels powered by the Pirate Weather API. Runs up to three stations, each with its own location and Dispatcharr channel.",
+  "author": "PWS",
+  "help_url": "https://pirateweather.net/",
+  "fields": [
+    {
+      "id": "setup_info",
+      "label": "Setup",
+      "type": "info",
+      "description": "Create a free API key at pirateweather.net, subscribe to the Forecast API, then enter the key and at least one ZIP code below. Activation of a new key can take up to 20 minutes. Each enabled station becomes its own channel."
+    },
+    {
+      "id": "api_key",
+      "label": "Pirate Weather API Key",
+      "type": "string",
+      "default": "",
+      "help_text": "Required. Shared by every station and kept out of the command line."
+    },
+    {
+      "id": "units",
+      "label": "Units",
+      "type": "select",
+      "default": "us",
+      "options": [
+        {
+          "value": "us",
+          "label": "Imperial (\u00b0F, mph, mi)"
+        },
+        {
+          "value": "ca",
+          "label": "Metric (\u00b0C, km/h, km)"
+        },
+        {
+          "value": "si",
+          "label": "SI (\u00b0C, m/s, km)"
+        },
+        {
+          "value": "uk",
+          "label": "UK (\u00b0C, mph, mi)"
+        }
+      ],
+      "help_text": "Unit system used for all on-screen values."
+    },
+    {
+      "id": "resolution",
+      "label": "Resolution",
+      "type": "select",
+      "default": "1920x1080",
+      "options": [
+        {
+          "value": "3840x2160",
+          "label": "4K (3840x2160)"
+        },
+        {
+          "value": "1920x1080",
+          "label": "1080p (1920x1080)"
+        },
+        {
+          "value": "1280x720",
+          "label": "720p (1280x720)"
+        },
+        {
+          "value": "854x480",
+          "label": "480p (854x480)"
+        }
+      ],
+      "help_text": "Output resolution for every station."
+    },
+    {
+      "id": "video_kbps",
+      "label": "Video Bitrate (kbps)",
+      "type": "number",
+      "default": 3500,
+      "min": 500,
+      "max": 20000,
+      "step": 100,
+      "help_text": "Target video bitrate per station."
+    },
+    {
+      "id": "radar_source",
+      "label": "Radar Source",
+      "type": "select",
+      "default": "noaa",
+      "options": [
+        {
+          "value": "noaa",
+          "label": "NOAA / NWS (US only)"
+        },
+        {
+          "value": "rainviewer",
+          "label": "RainViewer (worldwide)"
+        },
+        {
+          "value": "auto",
+          "label": "Auto (NOAA, fall back to RainViewer)"
+        },
+        {
+          "value": "off",
+          "label": "Off (hide the radar page)"
+        }
+      ],
+      "help_text": "Pirate Weather serves no radar imagery, so radar comes from a separate provider. NOAA covers the US only; RainViewer is worldwide. The on-screen credit follows whichever is used."
+    },
+    {
+      "id": "music_volume",
+      "label": "Background Music Volume",
+      "type": "number",
+      "default": 50,
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "help_text": "0 disables music. NOTE: no audio ships with the plugin - drop your own .mp3/.m4a/.aac/.flac/.ogg/.wav files into the plugin's assets/music folder, then restart. They are shuffled and looped. pws.log records how many tracks were found."
+    },
+    {
+      "id": "rss_urls",
+      "label": "News Ticker Feeds",
+      "type": "string",
+      "default": "",
+      "help_text": "Optional RSS/Atom URLs, comma separated, shared by every station. Weather alerts always appear in the ticker regardless."
+    },
+    {
+      "id": "station_1_info",
+      "label": "Station 1",
+      "type": "info",
+      "description": "The primary station."
+    },
+    {
+      "id": "station_1_enabled",
+      "label": "Enable Station 1",
+      "type": "boolean",
+      "default": true,
+      "help_text": "Each enabled station runs its own renderer and channel. Refresh intervals are shared out between them so the monthly API quota stays the same no matter how many you run."
+    },
+    {
+      "id": "zip_code",
+      "label": "Station 1 ZIP Code",
+      "type": "string",
+      "default": "",
+      "help_text": "5-digit US ZIP used to locate the forecast."
+    },
+    {
+      "id": "location_name",
+      "label": "Station 1 Location Name",
+      "type": "string",
+      "default": "",
+      "help_text": "Optional on-screen name. Resolved from the ZIP if blank."
+    },
+    {
+      "id": "channel_number",
+      "label": "Station 1 Channel Number",
+      "type": "number",
+      "default": "",
+      "help_text": "Optional channel number. Auto-assigned when blank."
+    },
+    {
+      "id": "station_2_info",
+      "label": "Station 2",
+      "type": "info",
+      "description": "Optional additional station and channel."
+    },
+    {
+      "id": "station_2_enabled",
+      "label": "Enable Station 2",
+      "type": "boolean",
+      "default": false,
+      "help_text": "Each enabled station runs its own renderer and channel. Refresh intervals are shared out between them so the monthly API quota stays the same no matter how many you run."
+    },
+    {
+      "id": "station_2_zip_code",
+      "label": "Station 2 ZIP Code",
+      "type": "string",
+      "default": "",
+      "help_text": "5-digit US ZIP used to locate the forecast."
+    },
+    {
+      "id": "station_2_location_name",
+      "label": "Station 2 Location Name",
+      "type": "string",
+      "default": "",
+      "help_text": "Optional on-screen name. Resolved from the ZIP if blank."
+    },
+    {
+      "id": "station_2_channel_number",
+      "label": "Station 2 Channel Number",
+      "type": "number",
+      "default": "",
+      "help_text": "Optional channel number. Auto-assigned when blank."
+    },
+    {
+      "id": "station_3_info",
+      "label": "Station 3",
+      "type": "info",
+      "description": "Optional additional station and channel."
+    },
+    {
+      "id": "station_3_enabled",
+      "label": "Enable Station 3",
+      "type": "boolean",
+      "default": false,
+      "help_text": "Each enabled station runs its own renderer and channel. Refresh intervals are shared out between them so the monthly API quota stays the same no matter how many you run."
+    },
+    {
+      "id": "station_3_zip_code",
+      "label": "Station 3 ZIP Code",
+      "type": "string",
+      "default": "",
+      "help_text": "5-digit US ZIP used to locate the forecast."
+    },
+    {
+      "id": "station_3_location_name",
+      "label": "Station 3 Location Name",
+      "type": "string",
+      "default": "",
+      "help_text": "Optional on-screen name. Resolved from the ZIP if blank."
+    },
+    {
+      "id": "station_3_channel_number",
+      "label": "Station 3 Channel Number",
+      "type": "number",
+      "default": "",
+      "help_text": "Optional channel number. Auto-assigned when blank."
+    }
+  ],
+  "actions": [
+    {
+      "id": "start",
+      "label": "Start",
+      "description": "Launch the PWS renderer and publish the channel.",
+      "button_label": "Start",
+      "button_color": "green"
+    },
+    {
+      "id": "stop",
+      "label": "Stop",
+      "description": "Terminate the PWS renderer.",
+      "button_label": "Stop",
+      "button_color": "yellow",
+      "confirm": {
+        "required": true,
+        "title": "Stop PWS?",
+        "message": "This will terminate the running PWS feed."
+      }
+    },
+    {
+      "id": "reset_defaults",
+      "label": "Reset to Defaults",
+      "description": "Stop the renderer and restore default settings.",
+      "button_label": "Reset",
+      "button_color": "red",
+      "confirm": {
+        "required": true,
+        "title": "Reset PWS settings?",
+        "message": "This stops the renderer and restores every setting to its default, including the API key."
+      }
+    }
+  ]
+}
