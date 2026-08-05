@@ -1,3 +1,4 @@
+<img width="1084" height="320" alt="pws_lockup_plate_2x" src="https://github.com/user-attachments/assets/193686c1-981a-481c-a407-40d09b48f98b" />
 # PWS — Pirate Weather Station
 
 A self-hosted, TV-style weather channel for [Dispatcharr](https://github.com/Dispatcharr/Dispatcharr).
