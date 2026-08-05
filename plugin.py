@@ -29,7 +29,7 @@ from urllib.parse import urlparse
 from django.db import transaction
 from django.utils import timezone
 
-from apps.channels.models import Channel, ChannelGroup, ChannelStream, Stream
+from apps.channels.models import Channel, ChannelGroup, ChannelStream, Logo, Stream
 from apps.plugins.models import PluginConfig
 from core.models import StreamProfile
 
@@ -222,14 +222,38 @@ def _build_fields() -> list[dict[str, Any]]:
             "label": f"Station {idx} ZIP Code",
             "type": "string",
             "default": "",
-            "help_text": "5-digit US ZIP used to locate the forecast.",
+            "help_text": (
+                "5-digit US ZIP used to locate the forecast. Leave blank and set "
+                "Latitude/Longitude instead for locations outside the US."
+            ),
+        })
+        fields.append({
+            "id": _station_field_id(idx, "lat"),
+            "label": f"Station {idx} Latitude",
+            "type": "string",
+            "default": "",
+            "help_text": (
+                "Decimal degrees (e.g. 51.5074). Used instead of ZIP Code for "
+                "locations outside the US; ignored when a ZIP Code is set."
+            ),
+        })
+        fields.append({
+            "id": _station_field_id(idx, "lon"),
+            "label": f"Station {idx} Longitude",
+            "type": "string",
+            "default": "",
+            "help_text": "Decimal degrees, negative for west (e.g. -0.1278).",
         })
         fields.append({
             "id": _station_field_id(idx, "location_name"),
             "label": f"Station {idx} Location Name",
             "type": "string",
             "default": "",
-            "help_text": "Optional on-screen name. Resolved from the ZIP if blank.",
+            "help_text": (
+                "Optional on-screen name. Resolved from the ZIP if blank; when "
+                "using Latitude/Longitude there is no automatic lookup, so set "
+                "this to avoid showing raw coordinates."
+            ),
         })
         fields.append({
             "id": _station_field_id(idx, "channel_number"),
@@ -243,13 +267,13 @@ def _build_fields() -> list[dict[str, Any]]:
 
 class Plugin:
     name = "PWS - Pirate Weather Station"
-    version = "1.1.2"
+    version = "1.1.5"
     description = (
         "TV-style weather channels powered by the Pirate Weather API. Runs up "
         "to three stations, each with its own location and Dispatcharr channel."
     )
-    author = "PWS"
-    help_url = "https://pirateweather.net/"
+    author = "dexdeadly"
+    help_url = "https://github.com/dexdeadly/pirate-weatharr-station/issues"
 
     # -- settings ---------------------------------------------------------
     # Shared settings first, then one block per station. Station 1 uses the
@@ -305,12 +329,17 @@ class Plugin:
         # Station N listens on _BASE_PORT + (N - 1); distinct from other
         # weather plugins, which commonly sit at 5950+.
         self._station_count = _STATION_COUNT
-        # Channel artwork. Dispatcharr stores a URL, so this only resolves if
-        # the plugin folder is reachable over HTTP; harmless when it is not.
-        self._logo_url = f"http://127.0.0.1:{_BASE_PORT}/logo.png"
+        # Channel/stream artwork. Hosted on GitHub rather than served by
+        # Dispatcharr's own plugin-logo route, so it stays correct regardless
+        # of what key the plugin happens to be installed under (raw. not
+        # blob. - blob:// is GitHub's HTML viewer page, not the image bytes).
+        self._logo_url = (
+            "https://raw.githubusercontent.com/dexdeadly/"
+            "pirate-weatharr-station/main/logo.png"
+        )
 
         self._channel_group_name = "Weather"
-        self._channel_title = "PWS Weather"
+        self._channel_title = "PWS"
         self._stream_title = "PWS Feed"
         self._stream_profile_id: Optional[int] = None
 
@@ -368,8 +397,11 @@ class Plugin:
         if not wanted:
             enabled = [i for i in self._station_indices()
                        if self._station_enabled(settings, i)]
-            msg = ("Enter a valid 5-digit ZIP code for at least one station."
-                   if enabled else "Enable at least one station and give it a ZIP code.")
+            msg = ("Enter a valid 5-digit ZIP code, or a Latitude/Longitude, for "
+                   "at least one station."
+                   if enabled else
+                   "Enable at least one station and give it a ZIP code or "
+                   "Latitude/Longitude.")
             return {"status": "error", "message": msg, "settings": settings}
 
         desired = self._resolve_output_settings(settings)
@@ -437,6 +469,10 @@ class Plugin:
         rk = lambda name: _station_runtime_key(idx, name)
 
         zip_code = self._station_zip(settings, idx)
+        coords = None if zip_code else self._station_coords(settings, idx)
+        fallback_label = zip_code or (
+            f"{coords[0]:.3f},{coords[1]:.3f}" if coords else f"station {idx}"
+        )
         stream_url = self._station_stream_url(idx)
         port = self._station_port(idx)
 
@@ -451,7 +487,7 @@ class Plugin:
                 updates[rk("output_url")] = stream_url
                 updates[rk("running")] = True
                 label = (self._station_runtime(settings, idx, "location_label")
-                         or zip_code)
+                         or fallback_label)
                 return {"updates": updates, "clears": clears,
                         "label": f"{label} (already running)"}
             if logger:
@@ -468,7 +504,7 @@ class Plugin:
 
         location_label = (
             str(self._station_setting(settings, idx, "location_name") or "").strip()
-            or self._resolve_location(zip_code) or ""
+            or (self._resolve_location(zip_code) if zip_code else "") or ""
         )
 
         try:
@@ -483,7 +519,7 @@ class Plugin:
         token = uuid.uuid4().hex
         try:
             pid = self._launch_process(
-                idx, api_key, zip_code, location_label, desired, settings,
+                idx, api_key, zip_code, coords, location_label, desired, settings,
                 token, stream_url, data_interval, regional_interval, logger,
             )
         except Exception as exc:
@@ -504,7 +540,7 @@ class Plugin:
             rk("output_url"): stream_url,
             rk("encoding"): desired,
         })
-        label = location_label or zip_code
+        label = location_label or fallback_label
         return {"updates": updates, "clears": clears,
                 "label": f"{label} on ch {channel.channel_number}"}
 
@@ -551,8 +587,13 @@ class Plugin:
                 self._station_runtime(settings, idx, "run_token"),
             ):
                 continue
+            zip_code = self._station_zip(settings, idx)
+            coords = None if zip_code else self._station_coords(settings, idx)
+            fallback = zip_code or (
+                f"{coords[0]:.3f},{coords[1]:.3f}" if coords else f"station {idx}"
+            )
             label = (self._station_runtime(settings, idx, "location_label")
-                     or self._station_zip(settings, idx) or f"station {idx}")
+                     or fallback)
             number = self._station_runtime(settings, idx, "resolved_channel_number")
             parts.append(f"{label} (ch {number})" if number else str(label))
         return {
@@ -690,14 +731,31 @@ class Plugin:
     def _station_zip(self, settings: Dict[str, Any], idx: int) -> str:
         return str(self._station_setting(settings, idx, "zip_code") or "").strip()
 
+    def _station_coords(self, settings: Dict[str, Any],
+                        idx: int) -> Optional[tuple[float, float]]:
+        """Explicit lat/lon for stations outside the US ZIP database."""
+        lat_raw = self._station_setting(settings, idx, "lat")
+        lon_raw = self._station_setting(settings, idx, "lon")
+        if str(lat_raw or "").strip() == "" or str(lon_raw or "").strip() == "":
+            return None
+        try:
+            lat = float(lat_raw)
+            lon = float(lon_raw)
+        except (TypeError, ValueError):
+            return None
+        if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lon <= 180.0):
+            return None
+        return lat, lon
+
     def _configured_stations(self, settings: Dict[str, Any]) -> list[int]:
-        """Enabled stations that also have a usable ZIP."""
+        """Enabled stations that also have a usable ZIP or lat/lon."""
         out = []
         for idx in self._station_indices():
             if not self._station_enabled(settings, idx):
                 continue
             zip_code = self._station_zip(settings, idx)
-            if zip_code.isdigit() and len(zip_code) == 5:
+            has_zip = zip_code.isdigit() and len(zip_code) == 5
+            if has_zip or self._station_coords(settings, idx):
                 out.append(idx)
         return out
 
@@ -864,7 +922,7 @@ class Plugin:
                                    stream_url: str) -> tuple[Stream, Channel]:
         suffix = location_label or f"Station {idx}"
         stream_name = f"{self._stream_title} ({suffix})"
-        channel_name = f"{self._channel_title} - {suffix}"
+        channel_name = f"{suffix} - {self._channel_title}"
 
         stream = self._get_or_create_stream(
             stream_name, self._station_runtime(settings, idx, "stream_id"), stream_url
@@ -888,6 +946,15 @@ class Plugin:
             return None
         return number if number > 0 else None
 
+    def _get_logo(self) -> Optional[Logo]:
+        """The plugin's bundled icon as a Dispatcharr Logo row, shared by every station."""
+        if not self._logo_url:
+            return None
+        logo, _ = Logo.objects.get_or_create(
+            url=self._logo_url, defaults={"name": self._channel_title}
+        )
+        return logo
+
     def _get_or_create_stream(self, name: str, stream_id: Optional[int],
                               stream_url: str) -> Stream:
         if stream_id:
@@ -908,11 +975,36 @@ class Plugin:
 
     def _get_or_create_channel(self, name: str, channel_id: Optional[int],
                                preferred_number: Optional[int]) -> Channel:
+        logo = self._get_logo()
+
         if channel_id:
             try:
-                return Channel.objects.get(id=channel_id)
+                channel = Channel.objects.get(id=channel_id)
             except Channel.DoesNotExist:
-                pass
+                channel = None
+            if channel is not None:
+                update_fields = []
+                if name and channel.name != name:
+                    channel.name = name
+                    update_fields.append("name")
+                if preferred_number and channel.channel_number != preferred_number:
+                    conflict = Channel.objects.filter(
+                        channel_number=preferred_number,
+                        channel_group__name=self._channel_group_name,
+                    ).exclude(id=channel.id).first()
+                    if conflict:
+                        raise RuntimeError(
+                            f"Channel number {preferred_number} is already used by "
+                            f"'{conflict.name}' in the {self._channel_group_name} group."
+                        )
+                    channel.channel_number = preferred_number
+                    update_fields.append("channel_number")
+                if logo is not None and channel.logo_id != logo.id:
+                    channel.logo = logo
+                    update_fields.append("logo")
+                if update_fields:
+                    channel.save(update_fields=update_fields)
+                return channel
 
         if preferred_number:
             match = Channel.objects.filter(
@@ -920,7 +1012,10 @@ class Plugin:
                 channel_group__name=self._channel_group_name,
             ).first()
             if match:
-                if match.name.startswith(self._channel_title):
+                if match.name.endswith(f" - {self._channel_title}"):
+                    if logo is not None and match.logo_id != logo.id:
+                        match.logo = logo
+                        match.save(update_fields=["logo"])
                     return match
                 raise RuntimeError(
                     f"Channel number {preferred_number} is already used by "
@@ -936,6 +1031,7 @@ class Plugin:
             channel_number=number,
             channel_group=group,
             stream_profile_id=self._get_stream_profile_id(),
+            logo=logo,
         )
 
     # -- process management -----------------------------------------------
@@ -974,13 +1070,17 @@ class Plugin:
             pass
 
     def _launch_process(self, idx: int, api_key: str, zip_code: str,
+                        coords: Optional[tuple[float, float]],
                         location_label: str, encoding: Dict[str, Any],
                         settings: Dict[str, Any], run_token: str,
                         stream_url: str, data_interval: int,
                         regional_interval: int, logger: Any) -> int:
-        cmd = [
-            self._python_interpreter(), "-m", "pws.main",
-            "--zip", zip_code,
+        cmd = [self._python_interpreter(), "-m", "pws.main"]
+        if zip_code:
+            cmd += ["--zip", zip_code]
+        elif coords:
+            cmd += ["--lat", f"{coords[0]:.6f}", "--lon", f"{coords[1]:.6f}"]
+        cmd += [
             "--units", (settings.get("units") or "us"),
             "--radar-source", (settings.get("radar_source") or "noaa"),
             "--music-volume", f"{self._music_volume(settings):.2f}",
@@ -1011,11 +1111,21 @@ class Plugin:
         env["PWS_RUN_TOKEN"] = run_token
         env["PWS_STATION_INDEX"] = str(idx)
         env.setdefault("DJANGO_SETTINGS_MODULE", "dispatcharr.settings")
+        # Never write .pyc caches into the plugin directory: it's shared by
+        # every station process, and a cache file created under one identity
+        # (container user, host user, whatever) blocks every other process
+        # from ever writing that path again.
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
 
+        location_desc = (
+            f"ZIP {zip_code}" if zip_code
+            else f"{coords[0]:.4f},{coords[1]:.4f}" if coords
+            else "unknown location"
+        )
         self._log_path.parent.mkdir(parents=True, exist_ok=True)
         self._rotate_log_if_needed()
         header = (f"\n--- [{datetime.now().isoformat()}] Starting PWS station "
-                  f"{idx} for ZIP {zip_code} ---\n")
+                  f"{idx} for {location_desc} ---\n")
         with open(self._log_path, "ab") as fh:
             fh.write(header.encode("utf-8"))
 

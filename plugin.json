@@ -1,9 +1,9 @@
 {
   "name": "PWS - Pirate Weather Station",
-  "version": "1.0.0",
+  "version": "1.1.5",
   "description": "TV-style weather channels powered by the Pirate Weather API. Runs up to three stations, each with its own location and Dispatcharr channel.",
-  "author": "DexDeadly",
-  "help_url": "https://github.com/dexdeadly/pirate-weatharr-station/",
+  "author": "dexdeadly",
+  "help_url": "https://github.com/dexdeadly/pirate-weatharr-station/issues",
   "fields": [
     {
       "id": "setup_info",
@@ -26,19 +26,19 @@
       "options": [
         {
           "value": "us",
-          "label": "Imperial (\u00b0F, mph, mi)"
+          "label": "Imperial (°F, mph, mi)"
         },
         {
           "value": "ca",
-          "label": "Metric (\u00b0C, km/h, km)"
+          "label": "Metric (°C, km/h, km)"
         },
         {
           "value": "si",
-          "label": "SI (\u00b0C, m/s, km)"
+          "label": "SI (°C, m/s, km)"
         },
         {
           "value": "uk",
-          "label": "UK (\u00b0C, mph, mi)"
+          "label": "UK (°C, mph, mi)"
         }
       ],
       "help_text": "Unit system used for all on-screen values."
@@ -138,14 +138,28 @@
       "label": "Station 1 ZIP Code",
       "type": "string",
       "default": "",
-      "help_text": "5-digit US ZIP used to locate the forecast."
+      "help_text": "5-digit US ZIP used to locate the forecast. Leave blank and set Latitude/Longitude instead for locations outside the US."
+    },
+    {
+      "id": "lat",
+      "label": "Station 1 Latitude",
+      "type": "string",
+      "default": "",
+      "help_text": "Decimal degrees (e.g. 51.5074). Used instead of ZIP Code for locations outside the US; ignored when a ZIP Code is set."
+    },
+    {
+      "id": "lon",
+      "label": "Station 1 Longitude",
+      "type": "string",
+      "default": "",
+      "help_text": "Decimal degrees, negative for west (e.g. -0.1278)."
     },
     {
       "id": "location_name",
       "label": "Station 1 Location Name",
       "type": "string",
       "default": "",
-      "help_text": "Optional on-screen name. Resolved from the ZIP if blank."
+      "help_text": "Optional on-screen name. Resolved from the ZIP if blank; when using Latitude/Longitude there is no automatic lookup, so set this to avoid showing raw coordinates."
     },
     {
       "id": "channel_number",
@@ -172,14 +186,28 @@
       "label": "Station 2 ZIP Code",
       "type": "string",
       "default": "",
-      "help_text": "5-digit US ZIP used to locate the forecast."
+      "help_text": "5-digit US ZIP used to locate the forecast. Leave blank and set Latitude/Longitude instead for locations outside the US."
+    },
+    {
+      "id": "station_2_lat",
+      "label": "Station 2 Latitude",
+      "type": "string",
+      "default": "",
+      "help_text": "Decimal degrees (e.g. 51.5074). Used instead of ZIP Code for locations outside the US; ignored when a ZIP Code is set."
+    },
+    {
+      "id": "station_2_lon",
+      "label": "Station 2 Longitude",
+      "type": "string",
+      "default": "",
+      "help_text": "Decimal degrees, negative for west (e.g. -0.1278)."
     },
     {
       "id": "station_2_location_name",
       "label": "Station 2 Location Name",
       "type": "string",
       "default": "",
-      "help_text": "Optional on-screen name. Resolved from the ZIP if blank."
+      "help_text": "Optional on-screen name. Resolved from the ZIP if blank; when using Latitude/Longitude there is no automatic lookup, so set this to avoid showing raw coordinates."
     },
     {
       "id": "station_2_channel_number",
@@ -206,14 +234,28 @@
       "label": "Station 3 ZIP Code",
       "type": "string",
       "default": "",
-      "help_text": "5-digit US ZIP used to locate the forecast."
+      "help_text": "5-digit US ZIP used to locate the forecast. Leave blank and set Latitude/Longitude instead for locations outside the US."
+    },
+    {
+      "id": "station_3_lat",
+      "label": "Station 3 Latitude",
+      "type": "string",
+      "default": "",
+      "help_text": "Decimal degrees (e.g. 51.5074). Used instead of ZIP Code for locations outside the US; ignored when a ZIP Code is set."
+    },
+    {
+      "id": "station_3_lon",
+      "label": "Station 3 Longitude",
+      "type": "string",
+      "default": "",
+      "help_text": "Decimal degrees, negative for west (e.g. -0.1278)."
     },
     {
       "id": "station_3_location_name",
       "label": "Station 3 Location Name",
       "type": "string",
       "default": "",
-      "help_text": "Optional on-screen name. Resolved from the ZIP if blank."
+      "help_text": "Optional on-screen name. Resolved from the ZIP if blank; when using Latitude/Longitude there is no automatic lookup, so set this to avoid showing raw coordinates."
     },
     {
       "id": "station_3_channel_number",

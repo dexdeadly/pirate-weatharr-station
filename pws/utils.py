@@ -180,6 +180,8 @@ def now_local() -> datetime:
 def to_local(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
+    if _TZ is not None:
+        return dt.astimezone(_TZ)
     return dt.astimezone()
 
 

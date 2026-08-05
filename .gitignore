@@ -1,1 +1,29 @@
+# Release artifacts (built by .github/workflows/create_release_zip.yaml)
 /pirate-weatharr-station-*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Runtime artifacts (written next to plugin.py when the plugin runs)
+pws.log
+.start.lock
+
+# Claude Code local settings (permission approvals, session state)
+.claude/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS cruft
+.DS_Store
+Thumbs.db

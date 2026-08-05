@@ -108,6 +108,36 @@ def _moon(base: Image.Image, S: int, t: float, cx: float, cy: float,
     base.alpha_composite(layer)
 
 
+@lru_cache(maxsize=64)
+def moon_phase_image(phase: float, size: int) -> Image.Image:
+    """Phase-accurate moon disc; 0/1=new, 0.25=first quarter, 0.5=full, 0.75=last quarter."""
+    size = max(1, int(size))
+    S = size * _SS
+    r = S / 2.0
+    phase = float(phase) % 1.0
+    cos_term = math.cos(2 * math.pi * phase)
+    waxing = phase < 0.5
+
+    img = Image.new("RGBA", (S, S), MOON_SHADE)
+    d = ImageDraw.Draw(img, "RGBA")
+    half_box = (r, 0, S, S) if waxing else (0, 0, r, S)
+    d.rectangle(half_box, fill=MOON)
+    # Terminator: an ellipse the width of cos(phase) either carves a crescent
+    # out of the lit half (near new) or bulges light into the dark half (near
+    # full) - the standard construction for a 2D moon-phase disc.
+    ew = r * abs(cos_term)
+    if ew > 0.5:
+        fill = MOON_SHADE if cos_term > 0 else MOON
+        d.ellipse((r - ew, 0, r + ew, S), fill=fill)
+
+    mask = Image.new("L", (S, S), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, S - 1, S - 1), fill=255)
+    img.putalpha(mask)
+
+    img = img.filter(ImageFilter.GaussianBlur(_SS * 0.35))
+    return img.resize((size, size), Image.LANCZOS)
+
+
 def _stars(draw: ImageDraw.ImageDraw, t: float, S: int,
            points: Sequence[tuple[float, float, float]]) -> None:
     """Four-point sparkles that twinkle out of phase with each other."""

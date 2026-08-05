@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import errno
+import glob
 import os
 import platform
 import queue
@@ -173,8 +174,10 @@ class FFMPEGStreamer:
                 "-global_quality", "0",
                 "-look_ahead", "0",
                 "-bf", "0",
-                "-qsv_device", "auto",
             ]
+            device = self._qsv_device_path()
+            if device:
+                args += ["-qsv_device", device]
         elif enc == "h264_amf":
             args = [
                 "-c:v", "h264_amf",
@@ -201,15 +204,68 @@ class FFMPEGStreamer:
             return self._nvenc_available()
         if enc == "h264_qsv":
             if sys == "windows":
-                return True
+                return self._qsv_functional(None)
             if sys == "linux":
-                return os.path.exists("/dev/dri/renderD128") or os.path.exists("/dev/dri/card0")
+                device = self._qsv_device_path()
+                return device is not None and self._qsv_functional(device)
             return False
         if enc == "h264_amf":
             return sys == "windows"
         if enc == "libx264":
             return True
         return False
+
+    @staticmethod
+    @lru_cache(maxsize=None)
+    def _qsv_device_path() -> str | None:
+        """
+        Explicit DRM render node for ``-qsv_device``, or ``None`` to omit the
+        flag entirely.
+
+        ``-qsv_device`` takes a literal device path (or a Windows device
+        index); "auto" is not a real value and some ffmpeg/driver builds
+        reject it outright ("Failed to set value 'auto' for option
+        'qsv_device': Invalid argument"). Leaving the flag off lets ffmpeg
+        pick its own default hardware device, which is what "auto" was meant
+        to convey.
+        """
+        if platform.system().lower() != "linux":
+            return None
+        for candidate in sorted(glob.glob("/dev/dri/renderD*")):
+            return candidate
+        if os.path.exists("/dev/dri/card0"):
+            return "/dev/dri/card0"
+        return None
+
+    @staticmethod
+    @lru_cache(maxsize=None)
+    def _qsv_functional(device: str | None) -> bool:
+        """
+        Actually initialise h264_qsv on a throwaway clip, rather than trusting
+        that a render node existing means the VA-API/QSV driver stack behind
+        it works. A device file can exist for a GPU with no QSV-capable
+        driver installed, in which case ffmpeg fails at encode time
+        ("Failed to initialise VAAPI connection") - by then it is too late to
+        fall back, and every restart repeats the same failure.
+        """
+        if shutil.which("ffmpeg") is None:
+            return False
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "color=black:s=64x64:d=0.1",
+            "-frames:v", "1", "-c:v", "h264_qsv",
+        ]
+        if device:
+            cmd += ["-qsv_device", device]
+        cmd += ["-f", "null", "-"]
+        try:
+            result = subprocess.run(
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
 
     @staticmethod
     @lru_cache(maxsize=None)

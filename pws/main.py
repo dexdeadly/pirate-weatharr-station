@@ -673,14 +673,22 @@ def _build_music_playlist(cfg: Config) -> str | None:
     # Shuffle so a looping channel does not always open with the same track.
     random.shuffle(tracks)
 
-    # One playlist per station: sibling stations share a plugin key, so a single
-    # shared path had them truncating each other's file at startup.
+    # One playlist per station process: sibling stations share a plugin key, and
+    # a fixed name can also collide with a leftover from a previous run under a
+    # different user - either way that's a stuck file neither this process nor
+    # the next can overwrite, since /tmp's sticky bit blocks cross-user
+    # overwrite *and* delete. A pid-suffixed name sidesteps that entirely.
     key = os.environ.get("PWS_PLUGIN_KEY", "pws")
     station = os.environ.get("PWS_STATION_INDEX", "1")
-    playlist = Path(tempfile.gettempdir()) / f"{key}_station{station}_music.txt"
-    with playlist.open("w", encoding="utf-8") as fh:
-        for track in tracks:
-            fh.write("file '%s'\n" % track.as_posix().replace("'", "'\\''"))
+    playlist = Path(tempfile.gettempdir()) / f"{key}_station{station}_{os.getpid()}_music.txt"
+    try:
+        with playlist.open("w", encoding="utf-8") as fh:
+            for track in tracks:
+                fh.write("file '%s'\n" % track.as_posix().replace("'", "'\\''"))
+    except OSError as exc:
+        print(f"[music] could not write playlist to {playlist}: {exc} "
+              f"- the channel will be silent.", flush=True)
+        return None
 
     print(
         f"[music] {len(tracks)} track(s) from {directory} "

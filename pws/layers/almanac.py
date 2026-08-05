@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List
 
 from PIL import ImageDraw
 
-from pws import theme
+from pws import icons_anim, theme
 from pws.core.layer import Layer
 
 #: Rows that get a coloured accent, keyed by label.
@@ -126,10 +126,15 @@ class AlmanacLayer(Layer):
             # differing font sizes no longer read as two separate rows.
             bar_h = max(self.s(20, 1), row_h - self.s(34))
             bar_x = x0 + self.s(14)
-            theme.accent_rule(draw, bar_x, int(centre - bar_h / 2), self.s(4),
-                              bar_h, color=accent)
-
-            text_x = bar_x + self.s(18)
+            moon_phase = row.get("moon_phase")
+            if name == "Moon Phase" and moon_phase is not None:
+                moon_img = icons_anim.moon_phase_image(float(moon_phase), bar_h)
+                surface.alpha_composite(moon_img, (bar_x, int(centre - bar_h / 2)))
+                text_x = bar_x + bar_h + self.s(14)
+            else:
+                theme.accent_rule(draw, bar_x, int(centre - bar_h / 2), self.s(4),
+                                  bar_h, color=accent)
+                text_x = bar_x + self.s(18)
             theme.label(draw, (text_x, theme.top_for_center(label_font, centre)),
                         name, label_font, fill=theme.TEXT_DIM,
                         tracking=self.s(2, 1))

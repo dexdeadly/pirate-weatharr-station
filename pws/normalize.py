@@ -598,7 +598,14 @@ def build_almanac(payload: dict, units: Units) -> list[dict]:
             "None nearby" if storm <= 0 else _measure(storm, units.distance, 0),
         ))
 
-    return [{"name": name, "value": value} for name, value in rows]
+    result = [{"name": name, "value": value} for name, value in rows]
+    moon_frac = _num(today.get("moonPhase"))
+    if moon_frac is not None:
+        for row in result:
+            if row["name"] == "Moon Phase":
+                row["moon_phase"] = moon_frac
+                break
+    return result
 
 
 # ---------------------------------------------------------------------------

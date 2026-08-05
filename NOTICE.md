@@ -23,8 +23,11 @@ import renaming (`weatherstream` → `pws`) and formatting:
 | `pws/core/datastore.py` | Background refresh thread |
 | `pws/map_tiles.py` | OpenStreetMap base maps and RainViewer radar frames |
 | `pws/utils.py` | Timezone, geometry and formatting helpers |
-| `pws/data/zipcodes.py` | ZIP code → coordinate lookup |
 | `pws/data/major_cities.py` | Nearby-city lookup table |
+
+`pws/data/zipcodes.py` started from the same upstream file but now resolves
+primarily from a bundled offline table (`pws/data/us_zipcodes.csv`, see below),
+falling back to the original remote lookup only for codes missing from it.
 
 ## What is partially derived
 
@@ -59,6 +62,8 @@ independent implementations.
 
 ## Other third-party components
 
+- US ZIP code → city/state/coordinates: [GeoNames](https://www.geonames.org/)
+  postal code dataset, Creative Commons Attribution 4.0 (`pws/data/us_zipcodes.csv`)
 - Weather data: [Pirate Weather](https://pirateweather.net/)
 - Radar imagery: [NOAA / National Weather Service](https://radar.weather.gov/)
   (public domain US government work) and [RainViewer](https://www.rainviewer.com/)
