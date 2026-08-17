@@ -188,7 +188,7 @@ class ChromeLayer(Layer):
 
     def _draw_alert(self, surface, alert: dict, header_h: int, w: int) -> None:
         color = theme.severity_color(alert.get("severity"))
-        pad_x = self.s(56)
+        pad_x = self.s(48)
         banner_y = header_h + self.s(10)
         banner_h = self.s(56, 1)
         theme.card(

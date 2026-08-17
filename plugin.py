@@ -38,6 +38,11 @@ try:
 except Exception:  # pragma: no cover - assets missing
     resolve_zip = None
 
+try:
+    from pws.data.world_cities import nearest_city
+except Exception:  # pragma: no cover - assets missing
+    nearest_city = None
+
 try:  # pragma: no cover - Unix only
     import fcntl
 except Exception:  # pragma: no cover - Windows
@@ -250,9 +255,8 @@ def _build_fields() -> list[dict[str, Any]]:
             "type": "string",
             "default": "",
             "help_text": (
-                "Optional on-screen name. Resolved from the ZIP if blank; when "
-                "using Latitude/Longitude there is no automatic lookup, so set "
-                "this to avoid showing raw coordinates."
+                "Optional on-screen name. Resolved automatically from the ZIP "
+                "or Latitude/Longitude if blank."
             ),
         })
         fields.append({
@@ -267,7 +271,7 @@ def _build_fields() -> list[dict[str, Any]]:
 
 class Plugin:
     name = "PWS - Pirate Weather Station"
-    version = "1.1.5"
+    version = "1.3.0"
     description = (
         "TV-style weather channels powered by the Pirate Weather API. Runs up "
         "to three stations, each with its own location and Dispatcharr channel."
@@ -504,7 +508,9 @@ class Plugin:
 
         location_label = (
             str(self._station_setting(settings, idx, "location_name") or "").strip()
-            or (self._resolve_location(zip_code) if zip_code else "") or ""
+            or (self._resolve_location(zip_code) if zip_code else "")
+            or (self._resolve_coords_location(coords) if coords else "")
+            or ""
         )
 
         try:
@@ -844,6 +850,15 @@ class Plugin:
             return f"{city}, {state}"
         return city or state or None
 
+    def _resolve_coords_location(self, coords: tuple[float, float]) -> Optional[str]:
+        if nearest_city is None:
+            return None
+        try:
+            match = nearest_city(coords[0], coords[1])
+        except Exception:
+            return None
+        return (match or {}).get("label") or None
+
     def _resolve_output_settings(self, settings: Dict[str, Any]) -> Dict[str, Any]:
         width = self._output_defaults["width"]
         height = self._output_defaults["height"]
@@ -953,6 +968,9 @@ class Plugin:
         logo, _ = Logo.objects.get_or_create(
             url=self._logo_url, defaults={"name": self._channel_title}
         )
+        if logo.name != self._channel_title:
+            logo.name = self._channel_title
+            logo.save(update_fields=["name"])
         return logo
 
     def _get_or_create_stream(self, name: str, stream_id: Optional[int],

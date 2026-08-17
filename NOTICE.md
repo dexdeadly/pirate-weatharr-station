@@ -64,6 +64,9 @@ independent implementations.
 
 - US ZIP code → city/state/coordinates: [GeoNames](https://www.geonames.org/)
   postal code dataset, Creative Commons Attribution 4.0 (`pws/data/us_zipcodes.csv`)
+- Worldwide nearest-city lookup for Latitude/Longitude stations: [GeoNames](https://www.geonames.org/)
+  cities (population 15,000+) and country name tables, Creative Commons
+  Attribution 4.0 (`pws/data/world_cities.csv`, `pws/data/countries.csv`)
 - Weather data: [Pirate Weather](https://pirateweather.net/)
 - Radar imagery: [NOAA / National Weather Service](https://radar.weather.gov/)
   (public domain US government work) and [RainViewer](https://www.rainviewer.com/)
