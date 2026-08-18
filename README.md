@@ -123,6 +123,7 @@ the same forecast response, so there are no fields for them.
 | ZIP Code (per station) | yes | 5-digit US ZIP; resolved to coordinates and a city name |
 | Location Name (per station) | no | Overrides the on-screen name resolved from the ZIP |
 | Units | no | Imperial / Metric / SI / UK. Default Imperial |
+| Data Refresh Interval | no | Minutes between Pirate Weather polls, per station. Default 10, 5–60 range. See [API quota](#api-quota) |
 | Radar Source | no | NOAA (US only, default), RainViewer (worldwide), Auto, or Off |
 | Background Music Volume | no | 0–100. 0 disables. Needs your own files in `assets/music` |
 | Resolution | no | 4K, 1080p, 720p or 480p. Default 1080p |
@@ -191,19 +192,21 @@ have them clobbering one another.
 
 Pirate Weather's free tier allows a fixed number of calls per month (10,000 at
 time of writing). A naive port of the original NWS refresh loop would exhaust
-that in days, so PWS budgets deliberately:
+that in days, so PWS budgets deliberately via the **Data Refresh Interval**
+setting (default 10 minutes, the per-station baseline at one station):
 
-- **Primary location** — one call every 10 minutes, roughly **4,300/month**.
-  A single call returns current conditions, hourly, daily and alerts, so every
-  page is fed from it.
-- **Regional cities** — six cities refreshed every 90 minutes, roughly
-  **2,900/month**. These drive only the two map pages.
-- **Total** — about **7,200/month**, leaving headroom.
+- **Primary location** — one call every interval, roughly **4,300/month** at
+  the 10-minute default. A single call returns current conditions, hourly,
+  daily and alerts, so every page is fed from it.
+- **Regional cities** — six cities refreshed every 9x the interval (90 min at
+  the default), roughly **2,900/month**. These drive only the two map pages.
+- **Total** — about **7,200/month** at the default, leaving headroom.
 
 **Running several stations does not multiply this.** Each station polls
 independently, so three at the single-station cadence would cost ~21,600
 calls/month — more than twice the free tier. PWS therefore scales the refresh
-intervals by the number of enabled stations, holding the total flat:
+intervals by the number of enabled stations, holding the total flat regardless
+of the interval you choose:
 
 | Stations | Forecast refresh | Regional refresh | Monthly calls |
 |---|---|---|---|
@@ -211,8 +214,10 @@ intervals by the number of enabled stations, holding the total flat:
 | 2 | 20 min | 180 min | ~7,200 |
 | 3 | 30 min | 270 min | ~7,200 |
 
-Forecast data changes slowly enough that a 30-minute refresh is not noticeable
-on screen; the clock and page cycling are local and keep updating regardless.
+The setting has a 5-minute floor - the lowest per-station baseline that still
+keeps 3 stations under the free tier - and a 60-minute ceiling. Forecast data
+changes slowly enough that even a 30-minute refresh is not noticeable on
+screen; the clock and page cycling are local and keep updating regardless.
 
 On top of the budget, the client:
 

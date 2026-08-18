@@ -34,12 +34,21 @@ from apps.plugins.models import PluginConfig
 from core.models import StreamProfile
 
 try:
-    from pws.data.zipcodes import resolve_zip
+    # Package-relative, not `from pws...`: Dispatcharr loads plugin.py as a
+    # submodule of a private namespace package rooted at this plugin's own
+    # install directory (apps/plugins/loader.py's _dispatcharr_plugin_<key>
+    # mechanism), which is reliable regardless of what that directory is
+    # named. The separately-aliased top-level "pws" name is not - it only
+    # gets registered when the install folder happens to be literally named
+    # "pws", and even then points one level too high for this repo's layout
+    # (plugin.py and pws/ are siblings, so "pws" the alias resolves to this
+    # directory itself, not into the pws/ package inside it).
+    from .pws.data.zipcodes import resolve_zip
 except Exception:  # pragma: no cover - assets missing
     resolve_zip = None
 
 try:
-    from pws.data.world_cities import nearest_city
+    from .pws.data.world_cities import nearest_city
 except Exception:  # pragma: no cover - assets missing
     nearest_city = None
 
@@ -159,6 +168,24 @@ _SHARED_FIELDS: list[dict[str, Any]] = [
         "help_text": "Target video bitrate per station.",
     },
     {
+        "id": "data_interval_min",
+        "label": "Data Refresh Interval (minutes)",
+        "type": "number",
+        "default": 10,
+        "min": 5,
+        "max": 60,
+        "step": 5,
+        "help_text": (
+            "How often each station re-polls Pirate Weather for a forecast. "
+            "Automatically multiplied by the number of enabled stations (2 "
+            "stations = 2x this interval, 3 = 3x, ...) so the total monthly "
+            "call count stays the same no matter how many stations run. The "
+            "default of 10 minutes keeps even 3 stations comfortably under "
+            "the free tier's 10,000 calls/month; the 5-minute floor is the "
+            "lowest value that still holds true at 3 stations."
+        ),
+    },
+    {
         "id": "radar_source",
         "label": "Radar Source",
         "type": "select",
@@ -271,7 +298,7 @@ def _build_fields() -> list[dict[str, Any]]:
 
 class Plugin:
     name = "PWS - Pirate Weather Station"
-    version = "1.3.0"
+    version = "1.3.1"
     description = (
         "TV-style weather channels powered by the Pirate Weather API. Runs up "
         "to three stations, each with its own location and Dispatcharr channel."
@@ -409,7 +436,7 @@ class Plugin:
             return {"status": "error", "message": msg, "settings": settings}
 
         desired = self._resolve_output_settings(settings)
-        data_interval, regional_interval = self._refresh_intervals(len(wanted))
+        data_interval, regional_interval = self._refresh_intervals(settings, len(wanted))
 
         updates: Dict[str, Any] = {}
         clears: list[str] = []
@@ -769,17 +796,33 @@ class Plugin:
                          field: str) -> Any:
         return settings.get(_station_runtime_key(idx, field))
 
-    def _refresh_intervals(self, station_count: int) -> tuple[int, int]:
+    def _data_interval_minutes(self, settings: Dict[str, Any]) -> int:
+        """User-configured per-station baseline for _refresh_intervals, clamped
+        to the field's own [5, 60] bounds so a bad/missing value can't defeat
+        the 3-station free-tier guarantee those bounds exist to protect."""
+        try:
+            value = settings.get("data_interval_min")
+            minutes = 10 if value in (None, "") else int(float(value))
+        except (TypeError, ValueError):
+            minutes = 10
+        return max(5, min(60, minutes))
+
+    def _refresh_intervals(self, settings: Dict[str, Any],
+                           station_count: int) -> tuple[int, int]:
         """
         Per-station refresh intervals, scaled by how many stations are running.
 
         Every station polls Pirate Weather independently, so running three at
         the single-station cadence would triple the monthly call count and blow
-        straight through the free tier. Spreading the intervals keeps the total
-        flat at roughly 7,200 calls/month however many stations are enabled.
+        straight through the free tier. Spreading the intervals by station
+        count holds the *total* flat regardless of how many stations are
+        enabled; "Data Refresh Interval" sets that per-station baseline for
+        one station, and regional (map) refreshes stay at 9x it, matching the
+        original 10min/90min ratio.
         """
         n = max(1, int(station_count))
-        return 600 * n, 5400 * n
+        base_sec = self._data_interval_minutes(settings) * 60
+        return base_sec * n, base_sec * 9 * n
 
     def _allowed_setting_keys(self) -> set[str]:
         keys = {f["id"] for f in self.fields}
