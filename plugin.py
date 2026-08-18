@@ -502,7 +502,7 @@ class Plugin:
         zip_code = self._station_zip(settings, idx)
         coords = None if zip_code else self._station_coords(settings, idx)
         fallback_label = zip_code or (
-            f"{coords[0]:.3f},{coords[1]:.3f}" if coords else f"station {idx}"
+            f"{coords[0]:.3f},{coords[1]:.3f}" if coords else f"Station {idx}"
         )
         stream_url = self._station_stream_url(idx)
         port = self._station_port(idx)
@@ -542,7 +542,7 @@ class Plugin:
 
         try:
             stream, channel = self._ensure_stream_and_channel(
-                settings, idx, location_label, stream_url
+                settings, idx, location_label, stream_url, fallback_label
             )
         except Exception as exc:
             if logger:
@@ -976,9 +976,9 @@ class Plugin:
         return self._stream_profile_id
 
     def _ensure_stream_and_channel(self, settings: Dict[str, Any], idx: int,
-                                   location_label: str,
-                                   stream_url: str) -> tuple[Stream, Channel]:
-        suffix = location_label or f"Station {idx}"
+                                   location_label: str, stream_url: str,
+                                   fallback_label: str) -> tuple[Stream, Channel]:
+        suffix = location_label or fallback_label
         stream_name = f"{self._stream_title} ({suffix})"
         channel_name = f"{suffix} - {self._channel_title}"
 

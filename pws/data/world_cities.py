@@ -15,8 +15,13 @@ DATA_PATH = Path(__file__).with_name("world_cities.csv")
 COUNTRIES_PATH = Path(__file__).with_name("countries.csv")
 
 #: Beyond this, "nearest known city" stops being a meaningful label (open
-#: ocean, polar regions, etc.) and a raw coordinate is more honest.
-_MAX_MATCH_MILES = 60.0
+#: ocean, polar regions, deep outback, etc.) and a raw coordinate is more
+#: honest. The US ZIP/city grid is dense enough that 60mi never mattered
+#: there, but plenty of populated, inhabited regions elsewhere (rural
+#: Australia, the Canadian interior, ...) have no population-15k+ city
+#: within 60mi despite being a perfectly reasonable place to run a station -
+#: 150mi still excludes truly remote coordinates while covering those.
+_MAX_MATCH_MILES = 150.0
 
 #: Within this radius, prefer the most populous match over the literal
 #: closest one - a big city's own districts are separate 15k+ population
