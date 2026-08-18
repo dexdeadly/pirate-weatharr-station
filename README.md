@@ -25,7 +25,7 @@ The channel cycles through eight pages, about 14 seconds each:
 | Regional Conditions | Current temperatures at nearby cities, plotted on a map |
 | Forecast Highs | Tomorrow's highs at those same cities |
 | Extended Forecast | Narrative panels for today and tomorrow with an eight-value stat grid, feels-like, accumulation, visibility and moon phase |
-| Almanac | Sunrise/sunset, dawn/dusk, moon phase, UV, ozone, accumulations, fire index |
+| Almanac | Sunrise/sunset, dawn/dusk, a phase-accurate moon icon, UV, ozone, accumulations, fire index |
 
 ### Header
 
@@ -57,12 +57,19 @@ header on every page.
 
 ## Install
 
-1. Copy the `PWS` folder into your Dispatcharr plugins directory:
+1. Install the release zip through Dispatcharr's **Plugins → Import Plugin**
+   upload, or copy the folder manually into your Dispatcharr plugins
+   directory as:
 
    ```
-   /data/plugins/PWS
+   /data/plugins/pws
    ```
 
+   The folder name matters: Dispatcharr derives the plugin's permanent
+   identity (settings storage, channel/logo linkage) from it. The release
+   zip is already structured so importing it lands at `pws`; if copying
+   manually, the folder must be named exactly `pws` (lowercase) for that
+   identity to stay stable across future updates.
 2. Restart Dispatcharr (or reload plugins from the UI).
 3. Open **Plugins → PWS — Pirate Weather Station** and fill in the settings.
 4. Press **Start**.
@@ -74,7 +81,8 @@ Channels are created in a group called **Weather**. A stream profile named
 
 PWS runs up to **three stations**, each with its own location, renderer process
 and channel. Station 1 is enabled by default; tick **Enable Station 2/3** and
-give each a ZIP code to add more.
+give each a ZIP code — or a Latitude/Longitude, for locations outside the
+US — to add more.
 
 | Station | Port | Stream URL |
 |---|---|---|
@@ -82,9 +90,15 @@ give each a ZIP code to add more.
 | 2 | 5961 | `http://127.0.0.1:5961/pws_2.ts` |
 | 3 | 5962 | `http://127.0.0.1:5962/pws_3.ts` |
 
-The API key, units, resolution, bitrate, radar source, music volume and news
-feeds are shared by all stations. Only the ZIP, display name and channel number
-are per station.
+The API key, units, resolution, bitrate, refresh interval, radar source, music
+volume and news feeds are shared by all stations. Only the location (ZIP or
+Latitude/Longitude), display name and channel number are per station.
+
+Each station's channel is named `{Location} - PWS` (e.g. `Levittown, PA -
+PWS`) and uses the plugin's own icon as its channel logo. Both the name and
+logo — along with the channel number, once set — stay in sync on every
+subsequent Start, so changing a station's location or icon later updates the
+existing channel rather than creating a new one.
 
 Disabling a station and pressing **Start** again stops just that station and
 leaves the others running. **Stop** halts all of them.
@@ -112,16 +126,18 @@ right after signup, wait and try again.
 
 ## Settings
 
-Nine entries, one of which is just help text. Everything the API can tell us, we
-ask the API instead of you — the timezone, city name and elevation all arrive in
-the same forecast response, so there are no fields for them.
+Shared settings, plus a repeated block per station (1–3). A few entries in
+each block are just section-header text. Everything the API can tell us, we
+ask the API instead of you — the timezone and elevation both arrive in the
+same forecast response, so there are no fields for them.
 
 | Setting | Required | Notes |
 |---|---|---|
 | Pirate Weather API Key | yes | Shared by all stations. Passed via the environment, never the command line |
 | Enable Station 1–3 | — | Station 1 on by default; 2 and 3 optional |
-| ZIP Code (per station) | yes | 5-digit US ZIP; resolved to coordinates and a city name |
-| Location Name (per station) | no | Overrides the on-screen name resolved from the ZIP |
+| ZIP Code (per station) | yes, unless Lat/Long set | 5-digit US ZIP; resolved to coordinates and a city name offline, no network call needed |
+| Latitude / Longitude (per station) | yes, unless ZIP set | Decimal degrees; for locations outside the US. Resolved to a nearby city name offline from a worldwide dataset |
+| Location Name (per station) | no | Overrides the on-screen/channel name auto-resolved from the ZIP or Latitude/Longitude |
 | Units | no | Imperial / Metric / SI / UK. Default Imperial |
 | Data Refresh Interval | no | Minutes between Pirate Weather polls, per station. Default 10, 5–60 range. See [API quota](#api-quota) |
 | Radar Source | no | NOAA (US only, default), RainViewer (worldwide), Auto, or Off |
@@ -162,7 +178,7 @@ Music is off unless you supply it. Drop `.mp3`, `.m4a`, `.aac`, `.flac`,
 `.ogg` or `.wav` files into:
 
 ```
-PWS/assets/music/
+pws/assets/music/
 ```
 
 They are shuffled, looped indefinitely and mixed under the video at the volume
@@ -178,8 +194,8 @@ Every startup logs what happened, so a silent channel is easy to diagnose from
 `pws.log`:
 
 ```
-[music] 12 track(s) from /data/plugins/PWS/assets/music at 50% volume -> ...
-[music] no audio files in /data/plugins/PWS/assets/music - the channel will be silent...
+[music] 12 track(s) from /data/plugins/pws/assets/music at 50% volume -> ...
+[music] no audio files in /data/plugins/pws/assets/music - the channel will be silent...
 [music] disabled (volume is 0)
 ```
 
@@ -237,7 +253,7 @@ free and do not count against your Pirate Weather quota.
 Useful for testing layout or diagnosing a start failure without Dispatcharr:
 
 ```bash
-cd /data/plugins/PWS
+cd /data/plugins/pws
 export PIRATE_WEATHER_API_KEY=your_key_here
 python3 -m pws.main --zip 84101 --out file:out.ts --page-seconds 4
 ```
@@ -250,14 +266,15 @@ Other flags: `--units`, `--lat/--lon`, `--w/--h`, `--video-kbps`,
 ## Layout
 
 ```
-PWS/
+pws/
 ├── plugin.py               Dispatcharr plugin: settings, start/stop, channel wiring
 ├── plugin.json             Plugin manifest (generated from plugin.py)
+├── logo.png                Plugin/channel icon (Dispatcharr plugin list + channel logo)
 ├── README.md
 ├── assets/
 │   ├── fonts/              Inter (Regular → Black), OFL licensed
 │   ├── icons/              Static PNG icons (unused fallback; icons are drawn)
-│   └── logo.png            Station logo shown in the header
+│   └── logo.png            Station logo shown in the on-screen header
 └── pws/
     ├── main.py             Renderer entry point
     ├── config.py           CLI configuration
@@ -270,7 +287,7 @@ PWS/
     ├── pages via main.py   Page composition and cycling
     ├── core/               Compositor, scheduler, layer base, datastore
     ├── output/             ffmpeg streaming
-    ├── data/               ZIP and city lookup tables
+    ├── data/               ZIP, worldwide city and country lookup tables
     └── map_tiles.py        OSM base maps + RainViewer radar
 ```
 
@@ -291,7 +308,9 @@ PWS/
   closes seamlessly and icons stay crisp at any size. Layers cache their static
   background and repaint only the icon rectangles each frame, which keeps a
   frame of animation at well under a millisecond instead of the ~500 ms a full
-  panel redraw costs.
+  panel redraw costs. The Almanac's moon icon is drawn the same way, but is
+  phase-accurate rather than decorative: the lit fraction and waxing/waning
+  side both match the real illumination for the day.
 - **Icons are looked up, not guessed.** Pirate Weather returns a machine-readable
   `icon` key, so icon selection is a lookup rather than regex matching against
   English forecast prose.
@@ -299,6 +318,12 @@ PWS/
   not a station network, so there are no nearby METAR readings to list. The
   Almanac page surfaces the astronomical and air-quality fields that come free
   in the same payload instead.
+- **Location lookups are offline, not live API calls.** ZIP codes and
+  Latitude/Longitude both resolve to a place name from datasets bundled in
+  `pws/data/` (GeoNames, see [NOTICE.md](NOTICE.md)) rather than a remote
+  geocoding request. This matters specifically for channel naming, which
+  happens inside Dispatcharr's own backend process — a process that often has
+  no outbound network access, unlike the renderer subprocess.
 - **Square-cornered, hard-edged graphics.** Rounded corners, blurred drop
   shadows and translucent top highlights read as generic soft-UI, so the
   station uses flat panels with crisp hairline borders instead. The switches
@@ -314,7 +339,7 @@ PWS/
 
 ## Troubleshooting
 
-Logs are written to `PWS/pws.log` inside the plugin folder.
+Logs are written to `pws/pws.log` inside the plugin folder.
 
 > **Note on naming.** The plugin identifies itself as `PWS - Pirate Weather
 > Station`. That string is deliberately kept clear of the upstream project's
@@ -323,6 +348,11 @@ Logs are written to `PWS/pws.log` inside the plugin folder.
 > the same plugin and offer to overwrite. Attribution lives in this README,
 > `NOTICE.md` and the source headers — none of which are read as plugin
 > identity — so credit and install safety do not conflict.
+>
+> Separately, the plugin's **install folder** must be named `pws` (see
+> [Install](#install)) — that name is what Dispatcharr uses to derive the
+> plugin's permanent settings/channel identity, independent of the display
+> name above.
 
 | Symptom | Likely cause |
 |---|---|
@@ -332,6 +362,7 @@ Logs are written to `PWS/pws.log` inside the plugin folder.
 | "port 5960/5961/5962 is already in use" | A previous renderer did not exit; press Stop, then Start |
 | "No stream profiles found" | Create a stream profile in Dispatcharr, ideally named `proxy` |
 | Channel exists but no video | Check `pws.log` for ffmpeg errors |
+| Channel is named "Station N - PWS" instead of a location | The plugin's install folder isn't named `pws` (see the naming note above), or Location Name/ZIP/Lat-Long are all blank for that station |
 | No background music | Nothing ships with the plugin — see below. `pws.log` says exactly what was found |
 | Radar echoes float on an empty background | The OpenStreetMap backdrop could not be fetched; `pws.log` logs `[radar] base map fetch failed`. Check the host can reach `tile.openstreetmap.org` |
 | Maps are empty | Regional lookups are paused for quota, or the cities refresh has not run yet |
@@ -345,6 +376,8 @@ Logs are written to `PWS/pws.log` inside the plugin folder.
   base reflectivity (public domain), with [RainViewer](https://www.rainviewer.com/)
   as the worldwide alternative
 - Base maps: [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors
+- ZIP/city/country location lookups: [GeoNames](https://www.geonames.org/)
+  (Creative Commons Attribution 4.0)
 - Typeface: [Inter](https://rsms.me/inter/) by Rasmus Andersson (SIL Open Font License)
 - Original project: [WeatharrStation](https://github.com/OkinawaBoss/WeatharrStation)
   by OkinawaBoss — PWS is derived from it and reuses its rendering pipeline.
