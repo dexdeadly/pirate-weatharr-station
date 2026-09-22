@@ -51,6 +51,8 @@ class TickerLayer(Layer):
         self._last_text = ""
         self._cap_w = 0
         self._fade: Image.Image | None = None
+        self._cap_state: tuple | None = None
+        self._cap_img: Image.Image | None = None
 
     # -- content ----------------------------------------------------------
 
@@ -82,6 +84,33 @@ class TickerLayer(Layer):
         self._strip = strip
         self._offset = 0.0
 
+    def _build_cap(self, cap_text: str, accent: tuple) -> None:
+        """
+        Render the left category pill ("ALERTS"/"NEWS"/"WEATHER") once.
+
+        It only changes when the feed category or alert state changes, but
+        the layer ticks at 30 Hz for the scroll - redrawing the pill and
+        remeasuring its text on every one of those ticks was pure waste.
+        """
+        pad = self.s(18, 1)
+        probe = Image.new("RGBA", (1, 1))
+        pd = ImageDraw.Draw(probe)
+        cap_text_w = theme.text_width(pd, cap_text, self._label_font) \
+            + self.s(2, 1) * max(0, len(cap_text) - 1)
+        cap_w = cap_text_w + pad * 2
+        height = self.surface.height
+        cap_h = height - self.s(16, 1)
+
+        img = Image.new("RGBA", (cap_w, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img, "RGBA")
+        theme.pill(draw, (0, self.s(8, 1), cap_w, height - self.s(8, 1)),
+                   fill=tuple(accent))
+        ty = self.s(8, 1) + max(0, (cap_h - theme.line_height(self._label_font)) // 2)
+        theme.tracked_text(draw, (pad, ty), cap_text, self._label_font,
+                           fill=theme.TEXT_ON_ACCENT, tracking=self.s(2, 1))
+        self._cap_img = img
+        self._cap_w = cap_w
+
     def _build_fade(self, width: int, height: int) -> Image.Image:
         """Horizontal alpha mask that fades the first/last few pixels."""
         fade_w = max(3, self.s(24, 3))
@@ -103,32 +132,24 @@ class TickerLayer(Layer):
 
         surface = self.surface
         surface.paste((0, 0, 0, 0), (0, 0, *surface.size))
-        draw = ImageDraw.Draw(surface, "RGBA")
 
         accent = self._safe(self.get_accent, theme.ACCENT)
         cap_text = str(self._safe(self.get_label, "WEATHER")).upper()
+        cap_state = (cap_text, tuple(accent), surface.height)
+        if cap_state != self._cap_state or self._cap_img is None:
+            self._cap_state = cap_state
+            self._build_cap(cap_text, accent)
 
-        # Left cap
-        pad = self.s(18, 1)
-        cap_text_w = theme.text_width(draw, cap_text, self._label_font) \
-            + self.s(2, 1) * max(0, len(cap_text) - 1)
-        cap_w = cap_text_w + pad * 2
-        theme.pill(
-            draw,
-            (self.s(10, 1), self.s(8, 1), self.s(10, 1) + cap_w, surface.height - self.s(8, 1)),
-            fill=tuple(accent),
-        )
-        cap_h = surface.height - self.s(16, 1)
-        ty = self.s(8, 1) + max(0, (cap_h - theme.line_height(self._label_font)) // 2)
-        theme.tracked_text(draw, (self.s(10, 1) + pad, ty), cap_text,
-                           self._label_font, fill=theme.TEXT_ON_ACCENT,
-                           tracking=self.s(2, 1))
+        surface.alpha_composite(self._cap_img, dest=(self.s(10, 1), 0))
+        cap_w = self._cap_w
 
         # Scrolling viewport to the right of the cap
         view_x = self.s(10, 1) + cap_w + self.s(18, 1)
         view_w = surface.width - view_x - self.s(10, 1)
         if view_w <= 0 or self._strip is None:
-            return self._mark_all_dirty_if_changed()
+            # Whole surface was just cleared and repainted above, so it is
+            # unconditionally dirty - no need to hash it to find that out.
+            return [(0, 0, surface.width, surface.height)]
 
         strip = self._strip
         h = min(surface.height, strip.height)
@@ -148,4 +169,7 @@ class TickerLayer(Layer):
         surface.alpha_composite(window, dest=(view_x, 0))
 
         self._offset += self.speed * self.min_interval
-        return self._mark_all_dirty_if_changed()
+        # The scroll offset advances every tick, so the frame is always
+        # different - hashing the buffer to confirm that was pure overhead
+        # at 30 Hz for an answer that's never "no".
+        return [(0, 0, surface.width, surface.height)]

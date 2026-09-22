@@ -429,11 +429,21 @@ class PageCycler:
         if not self.pages:
             return
         self._index = index % len(self.pages)
+        now = time.time()
         for i, page in enumerate(self.pages):
             visible = i == self._index
             for layer in page.get("layers", []):
                 if isinstance(layer, Layer):
                     layer.set_visible(visible)
+                    if visible:
+                        # The scheduler skips tick() while a layer is hidden,
+                        # so its surface may be stale by however long it sat
+                        # off-screen. Redraw it now rather than waiting for
+                        # its own cadence to come back around.
+                        try:
+                            layer.tick(now)
+                        except Exception:
+                            pass
 
     def start(self) -> None:
         if not self.pages or (self._thread and self._thread.is_alive()):
@@ -466,8 +476,7 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
         return max(minimum, int(round(value * scale)))
 
     def read(key: str, default=None):
-        value = store.read().get(key)
-        return default if value is None else value
+        return store.get(key, default)
 
     def content_bounds(top: int, bottom_extra: int = 24) -> tuple[int, int, int, int]:
         x = s(48)
@@ -554,20 +563,25 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
 
     if cfg.radar_source != "off":
         add_page("radar", "Live Radar", lambda b: [
-            RadarLayer(x=b[0], y=b[1], w=b[2], h=b[3], min_interval=0.25,
+            # Ticking every 0.25s with frame_hold=3 used to redo the full
+            # composite (frame paste, mask, legend, badge, text) on every
+            # tick even though the on-screen frame only advanced on every
+            # 3rd one. Matching the interval to the hold cuts that 3x
+            # redundant redraw while keeping the same on-screen cadence.
+            RadarLayer(x=b[0], y=b[1], w=b[2], h=b[3], min_interval=0.75,
                        get_new_frames=lambda: (
                            lambda fn: fn() if callable(fn) else []
-                       )(store.read().get("radar_new_frames")),
+                       )(store.get("radar_new_frames")),
                        get_source=lambda: str(read("radar_source", "") or ""),
-                       frame_hold=3, scale=scale)
+                       frame_hold=1, scale=scale)
         ], top=262)
 
     add_page("regional", "Regional Conditions", lambda b: [
         RegionalLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                       get_points=lambda: read("regional_points", []) or [],
                       get_map=lambda: (lambda im: im.copy() if im is not None else None)(
-                          store.read().get("regional_map_image")),
-                      get_bounds=lambda: store.read().get("regional_map_bounds"),
+                          store.get("regional_map_image")),
+                      get_bounds=lambda: store.get("regional_map_bounds"),
                       min_interval=20.0, scale=scale)
     ], top=262)
 
@@ -575,8 +589,8 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
         ForecastMapLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                          get_points=lambda: read("forecast_points", []) or [],
                          get_map=lambda: (lambda im: im.copy() if im is not None else None)(
-                             store.read().get("forecast_map_image")),
-                         get_bounds=lambda: store.read().get("forecast_map_bounds"),
+                             store.get("forecast_map_image")),
+                         get_bounds=lambda: store.get("forecast_map_bounds"),
                          min_interval=20.0, scale=scale)
     ], top=262)
 
@@ -670,8 +684,12 @@ def _build_music_playlist(cfg: Config) -> str | None:
         )
         return None
 
-    # Shuffle so a looping channel does not always open with the same track.
-    random.shuffle(tracks)
+    # Pick one track at random rather than concatenating the whole folder:
+    # the concat demuxer expects matching codec parameters across segments,
+    # so a mix of formats/sample rates can glitch or stall at a boundary.
+    # Looping a single file sidesteps that and still varies station to
+    # station and restart to restart.
+    track = random.choice(tracks)
 
     # One playlist per station process: sibling stations share a plugin key, and
     # a fixed name can also collide with a leftover from a previous run under a
@@ -683,15 +701,14 @@ def _build_music_playlist(cfg: Config) -> str | None:
     playlist = Path(tempfile.gettempdir()) / f"{key}_station{station}_{os.getpid()}_music.txt"
     try:
         with playlist.open("w", encoding="utf-8") as fh:
-            for track in tracks:
-                fh.write("file '%s'\n" % track.as_posix().replace("'", "'\\''"))
+            fh.write("file '%s'\n" % track.as_posix().replace("'", "'\\''"))
     except OSError as exc:
         print(f"[music] could not write playlist to {playlist}: {exc} "
               f"- the channel will be silent.", flush=True)
         return None
 
     print(
-        f"[music] {len(tracks)} track(s) from {directory} "
+        f"[music] chose '{track.name}' from {len(tracks)} track(s) in {directory} "
         f"at {int(cfg.music_volume * 100)}% volume -> {playlist}",
         flush=True,
     )

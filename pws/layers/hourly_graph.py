@@ -123,22 +123,25 @@ class HourlyGraphLayer(Layer):
             if isinstance(p.get("cloud"), (int, float)):
                 cloud_pts.append((x, y_for_pct(float(p["cloud"]))))
 
-        # Cloud cover sits furthest back as a soft band.
+        # Area fills are opaque pastes, so whichever one is drawn last wipes
+        # out any line drawn under it. Do every fill first (cloud furthest
+        # back), then every line on top, so the temperature curve - drawn
+        # last as a paste - can't erase the precip/cloud strokes above it.
         if len(cloud_pts) > 1:
             theme.area_fill(surface, cloud_pts, bottom, theme.CLOUD, alpha_top=34)
-            draw = ImageDraw.Draw(surface, "RGBA")
-            theme.sparkline(draw, cloud_pts, color=theme.with_alpha(theme.CLOUD, 190),
-                            width=self.s(3, 1), glow=False)
-
         if len(precip_pts) > 1:
             theme.area_fill(surface, precip_pts, bottom, theme.PRECIP, alpha_top=70)
-            draw = ImageDraw.Draw(surface, "RGBA")
-            theme.sparkline(draw, precip_pts, color=theme.PRECIP,
-                            width=self.s(4, 1), glow=False)
-
         if len(temp_pts) > 1:
             theme.area_fill(surface, temp_pts, bottom, theme.AMBER, alpha_top=52)
-            draw = ImageDraw.Draw(surface, "RGBA")
+
+        draw = ImageDraw.Draw(surface, "RGBA")
+        if len(cloud_pts) > 1:
+            theme.sparkline(draw, cloud_pts, color=theme.with_alpha(theme.CLOUD, 190),
+                            width=self.s(3, 1), glow=False)
+        if len(precip_pts) > 1:
+            theme.sparkline(draw, precip_pts, color=theme.PRECIP,
+                            width=self.s(4, 1), glow=False)
+        if len(temp_pts) > 1:
             theme.sparkline(draw, temp_pts, color=theme.AMBER, width=self.s(6, 1))
 
         # Temperature nodes + value labels

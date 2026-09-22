@@ -38,3 +38,15 @@ class DataStore:
     def read(self) -> dict:
         with self._lock:
             return dict(self._data)
+
+    def get(self, key, default=None):
+        """Single-field read without copying the whole dict.
+
+        Layer getters only ever pull one key at a time (some, like the
+        ticker, do it three times per tick at 30 Hz), so ``read().get(key)``
+        was needlessly shallow-copying every field just to throw the rest
+        away.
+        """
+        with self._lock:
+            value = self._data.get(key)
+        return default if value is None else value

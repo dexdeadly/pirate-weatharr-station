@@ -587,9 +587,10 @@ def build_almanac(payload: dict, units: Units) -> list[dict]:
 
     elevation = _num(payload.get("elevation"))
     if elevation is not None:
+        # Pirate Weather already returns elevation in the requested unit
+        # system (feet for "us", metres otherwise) - no conversion needed.
         unit = "ft" if not units.metric_temp else "m"
-        shown = elevation * 3.28084 if not units.metric_temp else elevation
-        rows.append(("Elevation", f"{int(round(shown))} {unit}"))
+        rows.append(("Elevation", f"{int(round(elevation))} {unit}"))
 
     storm = _num(cur.get("nearestStormDistance"))
     if storm is not None:

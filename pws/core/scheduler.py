@@ -37,8 +37,13 @@ class Scheduler:
             while self.heap and self.heap[0][0] <= now:
                 _, idx = heapq.heappop(self.heap)
                 L = self.layers[idx]
-                rects = L.tick(now)
+                # Hidden pages (7 of 8 at any moment) still sat on the heap
+                # redrawing their full surface on cadence even though nothing
+                # ever composited it - skip the tick entirely while hidden.
+                # PageCycler forces one tick immediately on activation, so the
+                # layer is never shown stale.
                 if getattr(L, "visible", True):
+                    rects = L.tick(now)
                     for r in rects:
                         dirty.append((L, r))
                 heapq.heappush(self.heap, (now + L.min_interval, idx))

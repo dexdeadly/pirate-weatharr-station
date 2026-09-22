@@ -16,6 +16,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Sequence
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 RGBA = tuple[int, int, int, int]
@@ -285,13 +286,22 @@ def severity_color(severity: str | None) -> RGBA:
 # ---------------------------------------------------------------------------
 
 def vertical_gradient(size: tuple[int, int], top: Sequence[int], bottom: Sequence[int]) -> Image.Image:
-    """Build a vertical gradient image cheaply (1px column, then resize)."""
+    """
+    Build a vertical gradient image.
+
+    This backs nearly every card, panel and area-fill in the UI, so it runs
+    on every redraw of every one of them. A per-row Python loop calling
+    mix() was the previous approach; a vectorised numpy lerp does the exact
+    same math (including the round-half-to-even rounding `mix()` used) in
+    one shot instead of one Python-level iteration per pixel row.
+    """
     w, h = max(1, int(size[0])), max(1, int(size[1]))
-    strip = Image.new("RGBA", (1, h))
-    px = strip.load()
-    for y in range(h):
-        px[0, y] = mix(top, bottom, y / max(1, h - 1))
-    return strip.resize((w, h), Image.BILINEAR)
+    t = np.asarray(top[:4], dtype=np.float64)
+    b = np.asarray(bottom[:4], dtype=np.float64)
+    frac = (np.arange(h, dtype=np.float64) / max(1, h - 1))[:, None]
+    rows = np.rint(t + (b - t) * frac).astype(np.uint8)  # (h, 4)
+    arr = np.broadcast_to(rows[:, None, :], (h, w, 4))
+    return Image.fromarray(np.ascontiguousarray(arr), "RGBA")
 
 
 def paint_background(surface: Image.Image, *, top: Sequence[int] = BG_TOP,
