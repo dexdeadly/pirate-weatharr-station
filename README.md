@@ -14,7 +14,8 @@ graphics and animated icons. See [NOTICE.md](NOTICE.md) for what is reused.
 
 ## Pages
 
-The channel cycles through eight pages, about 14 seconds each:
+The channel cycles through eight pages (nine with a surf spot set), about 14
+seconds each:
 
 | Page | Contents |
 |---|---|
@@ -25,6 +26,7 @@ The channel cycles through eight pages, about 14 seconds each:
 | Regional Conditions | Current temperatures at nearby cities, plotted on a map |
 | Forecast Highs | Tomorrow's highs at those same cities |
 | Extended Forecast | Narrative panels for today and tomorrow with an eight-value stat grid, feels-like, accumulation, visibility and moon phase |
+| Surf Report | Only when a surf spot is set. Estimated surf height and rating, primary/secondary swell, wind, water temperature, next tides and a 5-day wave outlook. See [Surf report](#surf-report) |
 | Almanac | Sunrise/sunset, dawn/dusk, a phase-accurate moon icon, UV, ozone, accumulations, fire index |
 
 ### Header
@@ -50,8 +52,25 @@ geometry lives in `pws/layout.py` — edit the weights there and all four column
 plus their dividers move together.
 
 A ticker runs along the bottom: active weather alerts first, then any RSS
-headlines you configure. Severe alerts also raise a coloured banner under the
-header on every page.
+headlines you configure.
+
+### Alert bar
+
+Between the header and the page content, every page carries a colour-coded
+alert bar:
+
+| State | Colour | Shown for |
+|---|---|---|
+| NO ALERTS | Green | No active alerts for the location |
+| WARNING | Amber | Watches, advisories and statements (or Minor/Moderate severity) |
+| ALERT | Red | NWS Warnings and Emergencies (or Severe/Extreme severity) |
+| NO DATA | Grey | The forecast couldn't be refreshed, so alert status is unknown |
+
+The event name decides the tier before severity does, because NWS severities
+are coarse (a Flood Watch is routinely "Severe" yet belongs in amber). With
+several alerts active the bar rotates through them, most serious first, about
+8 seconds each, and shows "1 of 3". Alerts come from Pirate Weather, which
+carries NWS alerts for the US.
 
 ---
 
@@ -163,6 +182,8 @@ same forecast response, so there are no fields for them.
 | Background Music Volume | no | 0–100. 0 disables. Needs your own files in `assets/music` |
 | Resolution | no | 4K, 1080p, 720p or 480p. Default 1080p |
 | Video Bitrate | no | kbps. Default 3500 |
+| Surf Spot Coordinates (per station) | no | `lat, lon` of a surf break, separate from the forecast location. Adds the Surf Report page; blank hides it |
+| Surf Spot Name (per station) | no | On-screen name for the break, e.g. Huntington Pier |
 | Channel Number (per station) | no | Auto-assigned from 1000 when blank |
 | News Ticker Feeds | no | Comma-separated RSS/Atom URLs |
 
@@ -190,6 +211,37 @@ NOAA returns bare transparent reflectivity with no geography in it, so PWS
 fetches an OpenStreetMap backdrop for the same area and composites the two. The
 backdrop is requested once and cached, and the radar overlay is requested for
 the backdrop's own tile-snapped bounds so the two line up exactly.
+
+## Surf report
+
+Set **Surf Spot Coordinates** on a station (for example `33.6553, -118.0029`)
+to add a Surf Report page. The spot is independent of the forecast location, so
+an inland station can still report on its nearest break. All surf data comes
+from free, keyless services and costs nothing against your Pirate Weather quota:
+
+- **[Open-Meteo Marine](https://open-meteo.com/en/docs/marine-weather-api)** —
+  significant wave height, primary and secondary swell (height, period,
+  direction), sea-surface temperature and the 5-day outlook. Worldwide. The
+  request snaps to the nearest ocean grid cell, so a pin on the sand still works.
+- **[Open-Meteo Forecast](https://open-meteo.com/)** — wind speed, direction and
+  gusts at the spot.
+- **[NOAA CO-OPS](https://tidesandcurrents.noaa.gov/)** — high/low tide
+  predictions from the nearest NOAA tide station within 60 miles. US coasts and
+  territories only; elsewhere the tides panel says so.
+
+Marine and wind data refresh every 30 minutes, tides every 6 hours. Open-Meteo's
+free tier is for non-commercial use and allows 10,000 calls a day; each station
+makes about 100.
+
+The surf height is an **estimate**: it scales the open-ocean wave height by
+swell period (long-period groundswell builds more on the way in), which is a
+rule of thumb rather than a reef- or bathymetry-aware forecast. The FLAT / POOR
+/ FAIR / GOOD / EPIC rating combines that size, the period and wind strength.
+Wind direction isn't judged as onshore or offshore, since that depends on which
+way the beach faces.
+
+If the coordinates are inland or otherwise have no marine forecast, the page
+says so instead of showing empty panels.
 
 ## Background music
 
@@ -307,6 +359,7 @@ pws/
     ├── core/               Compositor, scheduler, layer base, datastore
     ├── output/             ffmpeg streaming
     ├── data/               ZIP, worldwide city and country lookup tables
+    ├── surf.py             Surf data: Open-Meteo Marine/wind, NOAA tides
     └── map_tiles.py        OSM base maps + RainViewer radar
 ```
 

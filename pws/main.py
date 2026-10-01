@@ -29,7 +29,7 @@ from typing import Callable, Iterable, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from pws import icons_anim, layout, map_tiles, noaa_radar, normalize, theme
+from pws import icons_anim, layout, map_tiles, noaa_radar, normalize, surf, theme
 from pws.config import BASE_HEIGHT, BASE_WIDTH, Config, parse_args
 from pws.core.compositor import Compositor
 from pws.core.datastore import DataStore
@@ -37,6 +37,7 @@ from pws.core.layer import Layer
 from pws.core.scheduler import Scheduler
 from pws.data.major_cities import major_cities_near
 from pws.data.zipcodes import resolve_zip
+from pws.layers.alert_bar import AlertBarLayer
 from pws.layers.almanac import AlmanacLayer
 from pws.layers.chrome import ChromeLayer
 from pws.layers.clock import ClockLayer
@@ -47,6 +48,7 @@ from pws.layers.forecast_text import ForecastTextLayer
 from pws.layers.hourly_graph import HourlyGraphLayer
 from pws.layers.maps import ForecastMapLayer, RegionalLayer
 from pws.layers.radar import RadarLayer
+from pws.layers.surf import SurfLayer
 from pws.layers.ticker import TickerLayer
 from pws.output.stream_ffmpeg import FFMPEGStreamer
 from pws.pirate import PirateWeatherClient, PirateWeatherError
@@ -135,6 +137,14 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
     by the client's monthly-quota check.
     """
     lat, lon = client.lat, client.lon
+    surf_client = (
+        surf.SurfClient(cfg.surf_lat, cfg.surf_lon, units=cfg.units,
+                        user_agent=cfg.user_agent)
+        if cfg.surf_lat is not None and cfg.surf_lon is not None else None
+    )
+    surf_name = cfg.surf_name or (
+        f"{cfg.surf_lat:.3f}, {cfg.surf_lon:.3f}" if surf_client else ""
+    )
     rss = _RssTitleCache(cfg.rss_urls, cfg.rss_refresh_sec, cfg.rss_max_items)
     radar_state: dict[str, float] = {"last_ts": 0.0}
     regional_state: dict[str, object] = {"at": 0.0, "current": [], "forecast": []}
@@ -335,6 +345,14 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
         data: dict[str, object] = {}
         now = time.time()
 
+        # Independent, keyless sources: fetch before Pirate Weather so a
+        # forecast outage doesn't also blank the surf page.
+        if surf_client is not None:
+            try:
+                data["surf_report"] = surf.build_report(surf_client, surf_name)
+            except Exception as exc:
+                print(f"[surf] report failed: {exc!r}", flush=True)
+
         try:
             payload = client.forecast()
             data["error"] = None
@@ -522,6 +540,17 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
     ticker.z = 200
     layers.append(ticker)
 
+    # Colour-coded alert status in the gap between the header band and the
+    # page cards (which start at y=262), on every page.
+    alert_bar = AlertBarLayer(
+        x=s(48), y=s(layout.HEADER_H + 10), w=render_w - s(96), h=s(56, 1),
+        get_alerts=lambda: read("alerts", []) or [],
+        get_error=lambda: read("error"),
+        scale=scale,
+    )
+    alert_bar.z = 200
+    layers.append(alert_bar)
+
     def add_page(name: str, title: str,
                  builder: Callable[[tuple[int, int, int, int]], list[Layer]],
                  *, top: int) -> None:
@@ -530,7 +559,6 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
             width=render_w, height=render_h,
             location_name=cfg.location_name,
             page_title=title,
-            get_alerts=lambda: read("alerts", []) or [],
             scale=scale,
         )
         chrome.z = 0
@@ -599,6 +627,13 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
                           get_periods=lambda: read("forecast_periods", []) or [],
                           min_interval=30.0, scale=scale)
     ], top=262)
+
+    if cfg.surf_lat is not None and cfg.surf_lon is not None:
+        add_page("surf", "Surf Report", lambda b: [
+            SurfLayer(x=b[0], y=b[1], w=b[2], h=b[3],
+                      get_report=lambda: read("surf_report", {}) or {},
+                      min_interval=20.0, scale=scale)
+        ], top=262)
 
     add_page("almanac", "Almanac", lambda b: [
         AlmanacLayer(x=b[0], y=b[1], w=b[2], h=b[3],

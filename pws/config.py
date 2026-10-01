@@ -48,6 +48,11 @@ class Config:
     music_volume: float
     user_agent: str
 
+    # Surf report (optional; blank lat/lon hides the page)
+    surf_lat: float | None = None
+    surf_lon: float | None = None
+    surf_name: str = ""
+
     # News ticker
     rss_urls: list[str] = field(default_factory=list)
     rss_refresh_sec: int = 300
@@ -110,6 +115,12 @@ def parse_args(argv: list[str] | None = None) -> Config:
                       help="Background music gain, 0.0 silences it")
     data.add_argument("--user-agent", type=str, default="PWS/1.0")
 
+    surf = p.add_argument_group("Surf report")
+    surf.add_argument("--surf-lat", type=float, default=None,
+                      help="Surf spot latitude; with --surf-lon adds the Surf Report page")
+    surf.add_argument("--surf-lon", type=float, default=None)
+    surf.add_argument("--surf-name", type=str, default="")
+
     rss = p.add_argument_group("News / RSS")
     rss.add_argument("--rss-url", dest="rss_urls", action="append", default=[])
     rss.add_argument("--rss-refresh-sec", type=int, default=300)
@@ -142,6 +153,9 @@ def parse_args(argv: list[str] | None = None) -> Config:
         music_fifo=args.music_fifo,
         music_volume=max(0.0, min(1.0, args.music_volume)),
         user_agent=args.user_agent,
+        surf_lat=args.surf_lat if args.surf_lon is not None else None,
+        surf_lon=args.surf_lon if args.surf_lat is not None else None,
+        surf_name=(args.surf_name or "").strip(),
         rss_urls=args.rss_urls or [],
         rss_refresh_sec=max(60, min(3600, args.rss_refresh_sec)),
         rss_max_items=max(1, min(50, args.rss_max_items)),

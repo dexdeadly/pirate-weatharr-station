@@ -287,6 +287,26 @@ def _build_fields() -> list[dict[str, Any]]:
             ),
         })
         fields.append({
+            "id": _station_field_id(idx, "surf_spot"),
+            "label": f"Station {idx} Surf Spot Coordinates",
+            "type": "string",
+            "default": "",
+            "help_text": (
+                "Optional. Latitude, longitude of a surf break (e.g. "
+                "33.6553, -118.0029), separate from the forecast location. "
+                "Adds a Surf Report page with waves, swell, wind, water "
+                "temperature and tides (tides: US coasts only). Leave blank "
+                "to hide the page."
+            ),
+        })
+        fields.append({
+            "id": _station_field_id(idx, "surf_name"),
+            "label": f"Station {idx} Surf Spot Name",
+            "type": "string",
+            "default": "",
+            "help_text": "Optional on-screen name for the surf spot (e.g. Huntington Pier).",
+        })
+        fields.append({
             "id": _station_field_id(idx, "channel_number"),
             "label": f"Station {idx} Channel Number",
             "type": "number",
@@ -298,7 +318,7 @@ def _build_fields() -> list[dict[str, Any]]:
 
 class Plugin:
     name = "PWS - Pirate Weather Station"
-    version = "1.3.3"
+    version = "1.4.0"
     description = (
         "TV-style weather channels powered by the Pirate Weather API. Runs up "
         "to three stations, each with its own location and Dispatcharr channel."
@@ -507,13 +527,18 @@ class Plugin:
         stream_url = self._station_stream_url(idx)
         port = self._station_port(idx)
 
+        # The surf spot is per station; carry it in this station's copy of the
+        # launch spec so editing it restarts a running renderer like an
+        # encoding change does.
+        desired = {**desired, "surf": self._station_surf(settings, idx)}
+
         pid = self._station_runtime(settings, idx, "pid")
         run_token = self._station_runtime(settings, idx, "run_token")
 
         if pid and self._is_process_running(pid, run_token):
             current = self._station_runtime(settings, idx, "encoding") or {}
             changed = any(current.get(k) != desired.get(k)
-                          for k in ("fps", "width", "height", "video_kbps"))
+                          for k in ("fps", "width", "height", "video_kbps", "surf"))
             if not changed:
                 updates[rk("output_url")] = stream_url
                 updates[rk("running")] = True
@@ -779,6 +804,28 @@ class Plugin:
         if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lon <= 180.0):
             return None
         return lat, lon
+
+    @staticmethod
+    def _parse_surf_spot(raw: Any) -> Optional[tuple[float, float]]:
+        """``"lat, lon"`` (comma and/or whitespace separated) -> floats, or None."""
+        parts = str(raw or "").replace(",", " ").split()
+        if len(parts) != 2:
+            return None
+        try:
+            lat, lon = float(parts[0]), float(parts[1])
+        except ValueError:
+            return None
+        if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lon <= 180.0):
+            return None
+        return lat, lon
+
+    def _station_surf(self, settings: Dict[str, Any], idx: int) -> Optional[Dict[str, Any]]:
+        """The station's surf spot, or None when unset or unparseable."""
+        coords = self._parse_surf_spot(self._station_setting(settings, idx, "surf_spot"))
+        if coords is None:
+            return None
+        name = str(self._station_setting(settings, idx, "surf_name") or "").strip()
+        return {"lat": round(coords[0], 6), "lon": round(coords[1], 6), "name": name}
 
     def _configured_stations(self, settings: Dict[str, Any]) -> list[int]:
         """Enabled stations that also have a usable ZIP or lat/lon."""
@@ -1155,6 +1202,11 @@ class Plugin:
         ]
         if location_label:
             cmd += ["--location-name", location_label]
+        surf = encoding.get("surf")
+        if surf:
+            cmd += ["--surf-lat", f"{surf['lat']:.6f}", "--surf-lon", f"{surf['lon']:.6f}"]
+            if surf.get("name"):
+                cmd += ["--surf-name", surf["name"]]
         for url in self._sanitize_rss_urls(settings.get("rss_urls") or ""):
             cmd += ["--rss-url", url]
 

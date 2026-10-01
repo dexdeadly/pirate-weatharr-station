@@ -43,7 +43,8 @@ streaming code with a music-gain filter added.
 `pws/pirate.py`, `pws/normalize.py`, `pws/theme.py`, `pws/layout.py`,
 `pws/noaa_radar.py`, `pws/icons_anim.py`, `pws/layers/anim_icons.py`,
 `pws/layers/almanac.py`,
-`pws/layers/header_current.py` and `pws/layers/maps.py` were written for this
+`pws/layers/header_current.py`, `pws/layers/maps.py`, `pws/surf.py`,
+`pws/layers/surf.py` and `pws/layers/alert_bar.py` were written for this
 project.
 
 Measured at the time of writing: roughly 1,400 of ~5,450 lines of shipped Python
@@ -70,6 +71,10 @@ independent implementations.
 - Weather data: [Pirate Weather](https://pirateweather.net/)
 - Radar imagery: [NOAA / National Weather Service](https://radar.weather.gov/)
   (public domain US government work) and [RainViewer](https://www.rainviewer.com/)
+- Surf data: [Open-Meteo](https://open-meteo.com/) Marine and Forecast APIs,
+  Creative Commons Attribution 4.0, free for non-commercial use; tide
+  predictions from [NOAA CO-OPS](https://tidesandcurrents.noaa.gov/) (public
+  domain US government work)
 - Base map tiles: [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors
 - Typeface: [Inter](https://rsms.me/inter/) by Rasmus Andersson, SIL Open Font
   License 1.1 (full text in `assets/fonts/Inter-LICENSE.txt`)

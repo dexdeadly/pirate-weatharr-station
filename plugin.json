@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "PWS - Pirate Weather Station",
-  "version": "1.3.3",
+  "version": "1.4.0",
   "description": "TV-style weather channels powered by the Pirate Weather API. Runs up to three stations, each with its own location and Dispatcharr channel.",
   "author": "dexdeadly",
   "help_url": "https://github.com/dexdeadly/pirate-weatharr-station/issues",
@@ -127,7 +127,7 @@
       "min": 0,
       "max": 100,
       "step": 5,
-      "help_text": "0 disables music. NOTE: no audio ships with the plugin - drop your own .mp3/.m4a/.aac/.flac/.ogg/.wav files into the plugin's assets/music folder, then restart. They are shuffled and looped. pws.log records how many tracks were found."
+      "help_text": "0 disables music. NOTE: no audio ships with the plugin - drop your own .mp3/.m4a/.aac/.flac/.ogg/.wav files into the plugin's assets/music folder, then restart. One is chosen at random and looped for the run. pws.log records which track was picked."
     },
     {
       "id": "rss_urls",
@@ -178,6 +178,20 @@
       "help_text": "Optional on-screen name. Resolved automatically from the ZIP or Latitude/Longitude if blank."
     },
     {
+      "id": "surf_spot",
+      "label": "Station 1 Surf Spot Coordinates",
+      "type": "string",
+      "default": "",
+      "help_text": "Optional. Latitude, longitude of a surf break (e.g. 33.6553, -118.0029), separate from the forecast location. Adds a Surf Report page with waves, swell, wind, water temperature and tides (tides: US coasts only). Leave blank to hide the page."
+    },
+    {
+      "id": "surf_name",
+      "label": "Station 1 Surf Spot Name",
+      "type": "string",
+      "default": "",
+      "help_text": "Optional on-screen name for the surf spot (e.g. Huntington Pier)."
+    },
+    {
       "id": "channel_number",
       "label": "Station 1 Channel Number",
       "type": "number",
@@ -226,6 +240,20 @@
       "help_text": "Optional on-screen name. Resolved automatically from the ZIP or Latitude/Longitude if blank."
     },
     {
+      "id": "station_2_surf_spot",
+      "label": "Station 2 Surf Spot Coordinates",
+      "type": "string",
+      "default": "",
+      "help_text": "Optional. Latitude, longitude of a surf break (e.g. 33.6553, -118.0029), separate from the forecast location. Adds a Surf Report page with waves, swell, wind, water temperature and tides (tides: US coasts only). Leave blank to hide the page."
+    },
+    {
+      "id": "station_2_surf_name",
+      "label": "Station 2 Surf Spot Name",
+      "type": "string",
+      "default": "",
+      "help_text": "Optional on-screen name for the surf spot (e.g. Huntington Pier)."
+    },
+    {
       "id": "station_2_channel_number",
       "label": "Station 2 Channel Number",
       "type": "number",
@@ -272,6 +300,20 @@
       "type": "string",
       "default": "",
       "help_text": "Optional on-screen name. Resolved automatically from the ZIP or Latitude/Longitude if blank."
+    },
+    {
+      "id": "station_3_surf_spot",
+      "label": "Station 3 Surf Spot Coordinates",
+      "type": "string",
+      "default": "",
+      "help_text": "Optional. Latitude, longitude of a surf break (e.g. 33.6553, -118.0029), separate from the forecast location. Adds a Surf Report page with waves, swell, wind, water temperature and tides (tides: US coasts only). Leave blank to hide the page."
+    },
+    {
+      "id": "station_3_surf_name",
+      "label": "Station 3 Surf Spot Name",
+      "type": "string",
+      "default": "",
+      "help_text": "Optional on-screen name for the surf spot (e.g. Huntington Pier)."
     },
     {
       "id": "station_3_channel_number",
