@@ -603,10 +603,14 @@ class FFMPEGStreamer:
             if self._queue is None:
                 self._queue = queue.Queue(maxsize=self.max_queue)
             try:
-                self._queue.put_nowait(payload)
+                # Wait briefly rather than drop: every dropped frame puts the
+                # stream's timeline one frame behind the wall clock, and the
+                # scheduler's catch-up after a slow page build arrives as a
+                # short burst that a 2-slot queue can't absorb. Only a writer
+                # stalled for a full second (ffmpeg wedged) drops frames.
+                self._queue.put(payload, timeout=1.0)
                 return True
             except queue.Full:
-                # Drop frame if writer is backed up.
                 return False
 
         try:

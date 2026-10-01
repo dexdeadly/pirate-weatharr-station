@@ -23,10 +23,14 @@ class Scheduler:
     matches ffmpeg's ``-r`` exactly and doesn't drift.
     """
 
+    #: Lag beyond which missed frames are abandoned instead of filled in.
+    MAX_CATCHUP_SEC = 2.0
+
     def __init__(self, layers: List[Layer], cfr_hz: int | None = 30):
         self.layers = sorted(layers, key=lambda L: getattr(L, "z", 0))
         self.cfr = max(1, int(cfr_hz or 30))
         self.period = 1.0 / self.cfr
+        self.max_burst = max(1, int(self.MAX_CATCHUP_SEC * self.cfr) + 1)
 
     def run_forever(self, compositor: Compositor, on_present: Callable[[bytes], None],
                     should_stop: Optional[Callable[[], bool]] = None):
@@ -42,9 +46,10 @@ class Scheduler:
             if now < next_frame:
                 time.sleep(next_frame - now)
                 now = clock()
-            elif now - next_frame > 5 * self.period:
-                # Fell well behind (blocked output, slow page build): resync
-                # rather than bursting a backlog of frames at ffmpeg.
+            elif now - next_frame > self.MAX_CATCHUP_SEC:
+                # Output blocked for seconds (no client reading, ffmpeg
+                # restarting): that time is gone, so restart the timeline
+                # here rather than flood ffmpeg with seconds of backlog.
                 next_frame = now
 
             # Layers animate off wall-clock time, as before.
@@ -71,5 +76,16 @@ class Scheduler:
                 compositor.compose(self.layers)
             elif dirty:
                 compositor.compose(self.layers, dirty)
-            on_present(compositor.frame_bytes())
-            next_frame += self.period
+            frame = compositor.frame_bytes()
+
+            # Send this frame for every output slot that has come due. Normally
+            # that is exactly one; after a slow tick (building a freshly shown
+            # page can take a few hundred ms) the missed slots are filled with
+            # this same frame. ffmpeg timestamps by frame count, so skipping
+            # slots instead would leave the stream permanently behind the wall
+            # clock - measured at ~1.5 s per 5 minutes before this.
+            for _ in range(self.max_burst):
+                on_present(frame)
+                next_frame += self.period
+                if clock() < next_frame:
+                    break
