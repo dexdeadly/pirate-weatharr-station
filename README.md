@@ -77,6 +77,25 @@ header on every page.
 Channels are created in a group called **Weather**. A stream profile named
 `proxy` is used if one exists, otherwise the first available profile.
 
+### Capabilities
+
+Dispatcharr's plugin manifest v2 gates what a plugin's own process may do,
+similar to the permission prompts a mobile app requests at install. PWS
+declares three:
+
+| Capability | Why PWS needs it |
+|---|---|
+| `subprocess` | `_launch_process` spawns each station's renderer as `python -m pws.main` via `subprocess.Popen`. |
+| `persistent_service` | That renderer runs detached (`setsid`) and outlives the Start action, tracked by PID/token across Start/Stop. |
+| `network_listener` | `_is_port_available` binds a local socket to confirm a station's port is free before launching. |
+
+PWS does not declare `outbound_network` — `plugin.py` itself makes no
+`requests`/`urllib`/raw-socket calls; ZIP and coordinate resolution use the
+bundled `pws/data/` lookup tables, not the network. It also does not declare
+`filesystem_write` — the only writes `plugin.py` makes, its log and
+start-lock file, stay inside the plugin's own `/data/plugins/pws/`
+directory, which every plugin may always write to.
+
 ### Multiple stations
 
 PWS runs up to **three stations**, each with its own location, renderer process

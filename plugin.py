@@ -208,8 +208,8 @@ _SHARED_FIELDS: list[dict[str, Any]] = [
         "help_text": (
             "0 disables music. NOTE: no audio ships with the plugin - drop "
             "your own .mp3/.m4a/.aac/.flac/.ogg/.wav files into the plugin's "
-            "assets/music folder, then restart. They are shuffled and looped. "
-            "pws.log records how many tracks were found."
+            "assets/music folder, then restart. One is chosen at random and "
+            "looped for the run. pws.log records which track was picked."
         ),
     },
     {
@@ -298,7 +298,7 @@ def _build_fields() -> list[dict[str, Any]]:
 
 class Plugin:
     name = "PWS - Pirate Weather Station"
-    version = "1.3.2"
+    version = "1.3.3"
     description = (
         "TV-style weather channels powered by the Pirate Weather API. Runs up "
         "to three stations, each with its own location and Dispatcharr channel."

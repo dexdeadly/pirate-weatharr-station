@@ -24,6 +24,12 @@ def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> floa
 
 
 DATA_PATH = Path(__file__).with_name("us_cities.csv")
+#: Fills in the rest of the world (see world_cities.py) so a station outside
+#: the US finds real nearby cities instead of the closest - often very
+#: distant - US ones, which is all the US-only catalog above could ever
+#: offer it.
+WORLD_DATA_PATH = Path(__file__).with_name("world_cities.csv")
+COUNTRIES_PATH = Path(__file__).with_name("countries.csv")
 
 
 @dataclass(frozen=True)
@@ -32,6 +38,21 @@ class City:
     lat: float
     lon: float
     population: int
+
+
+@lru_cache(maxsize=1)
+def _country_names() -> dict[str, str]:
+    table: dict[str, str] = {}
+    try:
+        with COUNTRIES_PATH.open("r", encoding="utf-8", newline="") as fh:
+            for row in csv.DictReader(fh):
+                code = (row.get("code") or "").strip().upper()
+                name = (row.get("name") or "").strip()
+                if code and name:
+                    table[code] = name
+    except OSError:
+        pass
+    return table
 
 
 _MANUAL_ALIAS_KEYWORDS: dict[str, Sequence[str]] = {
@@ -51,22 +72,45 @@ _MANUAL_ALIAS_KEYWORDS: dict[str, Sequence[str]] = {
 @lru_cache(maxsize=1)
 def _city_catalog() -> tuple[City, ...]:
     catalog: list[City] = []
-    if not DATA_PATH.exists():
-        return tuple()
-    with DATA_PATH.open(encoding="utf-8") as fh:
-        reader = csv.DictReader(fh)
-        for row in reader:
-            name = (row.get("name") or "").strip()
-            if not name:
-                continue
-            try:
-                lat = float(row.get("lat", ""))
-                lon = float(row.get("lon", ""))
-                pop_raw = (row.get("pop") or "0").replace(",", "").strip()
-                population = int(float(pop_raw))
-            except (TypeError, ValueError):
-                continue
-            catalog.append(City(name=name, lat=lat, lon=lon, population=population))
+    if DATA_PATH.exists():
+        with DATA_PATH.open(encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            for row in reader:
+                name = (row.get("name") or "").strip()
+                if not name:
+                    continue
+                try:
+                    lat = float(row.get("lat", ""))
+                    lon = float(row.get("lon", ""))
+                    pop_raw = (row.get("pop") or "0").replace(",", "").strip()
+                    population = int(float(pop_raw))
+                except (TypeError, ValueError):
+                    continue
+                catalog.append(City(name=name, lat=lat, lon=lon, population=population))
+
+    if WORLD_DATA_PATH.exists():
+        country_names = _country_names()
+        with WORLD_DATA_PATH.open(encoding="utf-8", newline="") as fh:
+            reader = csv.DictReader(fh)
+            for row in reader:
+                # The US list above is denser and long-established; skip its
+                # country here rather than duplicate/compete with it.
+                if (row.get("country") or "").strip().upper() == "US":
+                    continue
+                name = (row.get("name") or "").strip()
+                if not name:
+                    continue
+                try:
+                    lat = float(row.get("lat", ""))
+                    lon = float(row.get("lon", ""))
+                    population = int(float(row.get("population") or 0))
+                except (TypeError, ValueError):
+                    continue
+                country = (row.get("country") or "").strip().upper()
+                region = country_names.get(country, country)
+                label = f"{name}, {region}" if region else name
+                catalog.append(City(name=label, lat=lat, lon=lon, population=population))
+
     catalog.sort(key=lambda c: c.population, reverse=True)
     return tuple(catalog)
 
