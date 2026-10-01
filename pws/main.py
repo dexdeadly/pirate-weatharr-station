@@ -447,21 +447,14 @@ class PageCycler:
         if not self.pages:
             return
         self._index = index % len(self.pages)
-        now = time.time()
+        # Only flip visibility here. The scheduler notices the change and
+        # ticks newly shown layers on its next frame; ticking them from this
+        # thread raced the render thread drawing the same surfaces.
         for i, page in enumerate(self.pages):
             visible = i == self._index
             for layer in page.get("layers", []):
                 if isinstance(layer, Layer):
                     layer.set_visible(visible)
-                    if visible:
-                        # The scheduler skips tick() while a layer is hidden,
-                        # so its surface may be stale by however long it sat
-                        # off-screen. Redraw it now rather than waiting for
-                        # its own cadence to come back around.
-                        try:
-                            layer.tick(now)
-                        except Exception:
-                            pass
 
     def start(self) -> None:
         if not self.pages or (self._thread and self._thread.is_alive()):
@@ -530,7 +523,9 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
     ticker = TickerLayer(
         x=s(48), y=render_h - ticker_h - s(22),
         w=render_w - s(96), h=ticker_h,
-        min_interval=1 / 30.0,
+        # One scroll step per output frame; faster just renders frames that
+        # are never sent.
+        min_interval=1.0 / max(1, cfg.output_fps),
         px_per_sec=max(1, int(round(cfg.ticker_speed_px_per_sec * scale))),
         get_text=lambda: str(read("ticker_text", "") or ""),
         get_label=lambda: str(read("ticker_label", "WEATHER") or "WEATHER"),
@@ -607,8 +602,7 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
     add_page("regional", "Regional Conditions", lambda b: [
         RegionalLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                       get_points=lambda: read("regional_points", []) or [],
-                      get_map=lambda: (lambda im: im.copy() if im is not None else None)(
-                          store.get("regional_map_image")),
+                      get_map=lambda: store.get("regional_map_image"),
                       get_bounds=lambda: store.get("regional_map_bounds"),
                       min_interval=20.0, scale=scale)
     ], top=262)
@@ -616,8 +610,7 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
     add_page("forecast_map", "Forecast Highs", lambda b: [
         ForecastMapLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                          get_points=lambda: read("forecast_points", []) or [],
-                         get_map=lambda: (lambda im: im.copy() if im is not None else None)(
-                             store.get("forecast_map_image")),
+                         get_map=lambda: store.get("forecast_map_image"),
                          get_bounds=lambda: store.get("forecast_map_bounds"),
                          min_interval=20.0, scale=scale)
     ], top=262)
@@ -833,9 +826,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     scheduler = Scheduler(layers=layers, cfr_hz=cfg.output_fps)
     cycler.start()
 
-    def on_present(image) -> None:
+    def on_present(frame: bytes) -> None:
         try:
-            streamer.send(image.tobytes())
+            streamer.send(frame)
         except Exception as exc:
             print(f"[stream] write failed: {exc!r}", flush=True)
 

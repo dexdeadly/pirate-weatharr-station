@@ -13,6 +13,7 @@ import queue
 import shutil
 import subprocess
 import threading
+import time
 from pathlib import Path
 from functools import lru_cache
 from urllib.parse import urlparse
@@ -105,6 +106,10 @@ class FFMPEGStreamer:
         self._stop_event = threading.Event()
         self._proc_dead = False
         self._proc_lock = threading.Lock()
+        # Restart backoff so an ffmpeg that dies on launch isn't respawned on
+        # every frame (24-30 launches a second, each re-probing hardware).
+        self._last_start = 0.0
+        self._backoff = 0.0
 
     # ------------------------- helpers -------------------------
 
@@ -201,7 +206,9 @@ class FFMPEGStreamer:
         if enc == "h264_videotoolbox":
             return sys == "darwin"
         if enc == "h264_nvenc":
-            return self._nvenc_available()
+            # libcuda being installed doesn't mean a usable NVIDIA GPU is
+            # visible (common in containers); confirm with a real encode.
+            return self._nvenc_available() and self._encoder_functional("h264_nvenc")
         if enc == "h264_qsv":
             if sys == "windows":
                 return self._qsv_functional(None)
@@ -262,6 +269,24 @@ class FFMPEGStreamer:
             result = subprocess.run(
                 cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 timeout=5,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    @staticmethod
+    @lru_cache(maxsize=None)
+    def _encoder_functional(enc: str) -> bool:
+        """One-frame test encode with ``enc``; cached for the process."""
+        if shutil.which("ffmpeg") is None:
+            return False
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                 "-f", "lavfi", "-i", "color=black:s=256x256:d=0.1",
+                 "-frames:v", "1", "-pix_fmt", "yuv420p", "-c:v", enc,
+                 "-f", "null", "-"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10,
             )
             return result.returncode == 0
         except Exception:
@@ -355,8 +380,14 @@ class FFMPEGStreamer:
         cmd = [
             "ffmpeg",
             "-hide_banner",
+            # No per-half-second progress line: it grew pws.log without bound.
+            "-nostats",
+            "-loglevel", "warning",
             "-fflags", "+genpts",
-            "-thread_queue_size", "8192",
+            # Each queued packet is a whole raw frame (~8 MB at 1080p RGBA,
+            # ~33 MB at 4K); 8192 of them could queue tens of GB if the
+            # encoder stalled. A short queue just applies backpressure.
+            "-thread_queue_size", "64",
             "-f", "rawvideo",
             "-pix_fmt", "rgba",
             "-s", f"{self.width}x{self.height}",
@@ -479,6 +510,7 @@ class FFMPEGStreamer:
         if self.print_cmd:
             print("FFmpeg CMD:\n", " ".join(cmd), flush=True)
 
+        self._last_start = time.monotonic()
         try:
             with self._proc_lock:
                 self.proc = subprocess.Popen(
@@ -539,8 +571,23 @@ class FFMPEGStreamer:
                 self._proc_dead = True
                 continue
 
+    def _restart_allowed(self) -> bool:
+        """Exponential backoff (1 s up to 30 s) while ffmpeg keeps dying; resets after a minute of uptime."""
+        now = time.monotonic()
+        if self._last_start and now - self._last_start > 60:
+            self._backoff = 0.0
+        if self._last_start and now - self._last_start < self._backoff:
+            return False
+        if self._last_start:
+            self._backoff = min(30.0, max(1.0, self._backoff * 2))
+            print(f"[FFMPEGStreamer] ffmpeg exited; restarting "
+                  f"(next retry in {self._backoff:.0f}s if it fails again)", flush=True)
+        return True
+
     def send(self, frame) -> bool:
         if self.proc is None or self.proc.poll() is not None or self._proc_dead:
+            if not self._restart_allowed():
+                return False
             self.start()
         if self.proc is None:
             raise RuntimeError("FFmpeg process not available")

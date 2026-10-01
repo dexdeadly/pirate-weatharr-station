@@ -18,8 +18,6 @@ import renaming (`weatherstream` → `pws`) and formatting:
 | File | Purpose |
 |---|---|
 | `pws/core/layer.py` | Layer base class and dirty-rect contract |
-| `pws/core/compositor.py` | Frame compositor |
-| `pws/core/scheduler.py` | Per-layer tick scheduling and CFR presentation |
 | `pws/core/datastore.py` | Background refresh thread |
 | `pws/map_tiles.py` | OpenStreetMap base maps and RainViewer radar frames |
 | `pws/utils.py` | Timezone, geometry and formatting helpers |
@@ -35,8 +33,13 @@ falling back to the original remote lookup only for codes missing from it.
 upstream structure but have been substantially rewritten (typically 3–37% textual
 similarity) for the new data provider and visual design.
 
+`pws/core/compositor.py` (now dirty-rect) and `pws/core/scheduler.py` (now
+strict constant-frame-rate pacing) keep upstream's interfaces but were
+rewritten in v1.4.1.
+
 `pws/output/stream_ffmpeg.py` is upstream's ffmpeg process management and
-streaming code with a music-gain filter added.
+streaming code with a music-gain filter, hardware-encoder probing and restart
+backoff added.
 
 ## What is new
 

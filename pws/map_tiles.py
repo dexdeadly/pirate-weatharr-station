@@ -46,8 +46,21 @@ def _cache_get(key: tuple, ttl: int) -> Optional[Image.Image]:
     return img.copy()
 
 
+#: Longest TTL any caller passes to _cache_get.
+_IMAGE_CACHE_MAX_AGE = 1800
+_CACHE_LOCK = threading.Lock()
+
+
 def _cache_put(key: tuple, img: Image.Image) -> None:
-    _IMAGE_CACHE[key] = (time.time(), img)
+    now = time.time()
+    # RainViewer tiles are keyed by frame timestamp, so new keys arrive every
+    # ~10 minutes forever. Evict expired entries, or the cache grows by a few
+    # MB per radar update for the life of the process.
+    with _CACHE_LOCK:  # the data and radar-fetch threads both write here
+        for stale in [k for k, (ts, _) in _IMAGE_CACHE.items()
+                      if now - ts > _IMAGE_CACHE_MAX_AGE]:
+            _IMAGE_CACHE.pop(stale, None)
+        _IMAGE_CACHE[key] = (now, img)
 
 
 def _meta_cache_get(key: str, ttl: int) -> Optional[dict]:

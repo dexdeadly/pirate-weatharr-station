@@ -48,6 +48,7 @@ class TickerLayer(Layer):
         self._label_font = theme.font(self.s(21, 9), "bold")
         self._strip: Image.Image | None = None
         self._offset = 0.0
+        self._last_now: float | None = None
         self._last_text = ""
         self._cap_w = 0
         self._fade: Image.Image | None = None
@@ -168,7 +169,11 @@ class TickerLayer(Layer):
         )
         surface.alpha_composite(window, dest=(view_x, 0))
 
-        self._offset += self.speed * self.min_interval
+        # Advance by real elapsed time, not a fixed step per tick, so the
+        # scroll speed holds even if a frame runs late.
+        dt = self.min_interval if self._last_now is None else now - self._last_now
+        self._last_now = now
+        self._offset += self.speed * max(0.0, min(dt, 1.0))
         # The scroll offset advances every tick, so the frame is always
         # different - hashing the buffer to confirm that was pure overhead
         # at 30 Hz for an answer that's never "no".
