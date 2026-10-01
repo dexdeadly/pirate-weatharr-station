@@ -271,6 +271,17 @@ def temp_color(value: float | int | None) -> RGBA:
     return TEXT
 
 
+#: Alert bar tiers.
+ALERT_NONE: RGBA = (34, 197, 94, 255)       # green-500: all clear
+ALERT_WARNING: RGBA = (251, 191, 36, 255)   # amber-400: watch / advisory
+ALERT_ALERT: RGBA = (239, 68, 68, 255)      # red-500: warning / emergency
+
+
+def alert_level_color(level: str | None) -> RGBA:
+    return {"alert": ALERT_ALERT, "warning": ALERT_WARNING}.get(
+        (level or "").strip().lower(), ALERT_NONE)
+
+
 def severity_color(severity: str | None) -> RGBA:
     key = (severity or "").strip().lower()
     return {

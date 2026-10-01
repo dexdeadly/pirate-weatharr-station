@@ -613,6 +613,42 @@ def build_almanac(payload: dict, units: Units) -> list[dict]:
 # Alerts / ticker
 # ---------------------------------------------------------------------------
 
+#: Alert-bar tiers, lowest to highest.
+ALERT_LEVEL_NONE = "none"
+ALERT_LEVEL_WARNING = "warning"
+ALERT_LEVEL_ALERT = "alert"
+_LEVEL_RANK = {ALERT_LEVEL_NONE: 0, ALERT_LEVEL_WARNING: 1, ALERT_LEVEL_ALERT: 2}
+
+
+def alert_level(title: str | None, severity: str | None) -> str:
+    """
+    Bucket an alert into the alert bar's two active tiers.
+
+    The event name decides first, because NWS severities are coarse (a Flood
+    Watch is routinely "Severe"): Warnings and Emergencies are ALERT (red);
+    Watches, Advisories and Statements are WARNING (amber). Anything else falls
+    back to severity - Extreme/Severe is ALERT, everything lower WARNING.
+    """
+    event = (title or "").split(" issued ")[0].lower()
+    if "warning" in event or "emergency" in event:
+        return ALERT_LEVEL_ALERT
+    if any(word in event for word in ("watch", "advisory", "statement", "outlook")):
+        return ALERT_LEVEL_WARNING
+    if (severity or "").strip().lower() in ("extreme", "severe"):
+        return ALERT_LEVEL_ALERT
+    return ALERT_LEVEL_WARNING
+
+
+def alerts_level(alerts: Sequence[dict]) -> str:
+    """Highest tier across a set of normalized alerts (``none`` when empty)."""
+    best = ALERT_LEVEL_NONE
+    for alert in alerts or []:
+        level = alert.get("level") or ALERT_LEVEL_WARNING
+        if _LEVEL_RANK.get(level, 1) > _LEVEL_RANK[best]:
+            best = level
+    return best
+
+
 def build_alerts(payload: dict) -> list[dict]:
     """Normalize the ``alerts`` block (US only, sourced from the NWS)."""
     out: list[dict] = []
@@ -627,15 +663,19 @@ def build_alerts(payload: dict) -> list[dict]:
             region_text = ", ".join(str(r).strip() for r in regions if str(r).strip())
         else:
             region_text = ""
+        severity = str(item.get("severity") or "Unknown").title()
         out.append(
             {
                 "title": title,
-                "severity": str(item.get("severity") or "Unknown").title(),
+                "severity": severity,
+                "level": alert_level(title, severity),
                 "regions": region_text,
                 "expires": _clock(item.get("expires")),
                 "description": str(item.get("description") or "").strip(),
             }
         )
+    # Most serious first, so the alert bar leads with what matters.
+    out.sort(key=lambda a: -_LEVEL_RANK.get(a["level"], 1))
     return out
 
 
