@@ -30,6 +30,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from pws import icons_anim, layout, map_tiles, noaa_radar, normalize, surf, theme
+from pws.nws_alerts import NWSAlertPoller
 from pws.config import BASE_HEIGHT, BASE_WIDTH, Config, parse_args
 from pws.core.compositor import Compositor
 from pws.core.datastore import DataStore
@@ -328,22 +329,12 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
         radar_state["served"] = len(frames)
         return [(f["image"].copy(), f.get("label") or "") for f in frames[served:]]
 
-    def _ticker(alerts: list[dict]) -> tuple[str, str]:
-        """Return (text, category-label) for the ticker."""
-        headlines = rss.titles()
-        alert_text = normalize.alerts_ticker_text(alerts)
-        if alerts and headlines:
-            joined = "  •  ".join(headlines)
-            return (f"{alert_text}  •  {joined}", "ALERTS")
-        if alerts:
-            return (alert_text, "ALERTS")
-        if headlines:
-            return ("  •  ".join(headlines), "NEWS")
-        return (alert_text, "WEATHER")
-
     def fetch_all() -> dict:
         data: dict[str, object] = {}
         now = time.time()
+        # The ticker is assembled live from these plus the current alerts
+        # (see _build_layers), so alerts never wait for a forecast refresh.
+        data["headlines"] = rss.titles()
 
         # Independent, keyless sources: fetch before Pirate Weather so a
         # forecast outage doesn't also blank the surf page.
@@ -358,8 +349,6 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
             data["error"] = None
         except PirateWeatherError as exc:
             data["error"] = str(exc)
-            data["ticker_text"] = f"Pirate Weather unavailable — {exc}"
-            data["ticker_label"] = "STATUS"
             return data
 
         alerts = normalize.build_alerts(payload)
@@ -370,9 +359,6 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
         data["hourly_points"] = normalize.build_hourly_points(payload, units, limit=12)
         data["almanac_rows"] = normalize.build_almanac(payload, units)
 
-        text, label = _ticker(alerts)
-        data["ticker_text"] = text
-        data["ticker_label"] = label
 
         _refresh_regional(now)
         regional_points = list(regional_state.get("current") or [])
@@ -478,8 +464,21 @@ class PageCycler:
 # Layer / page construction
 # ---------------------------------------------------------------------------
 
+def _ticker_parts(alerts: list[dict], headlines: list[str]) -> tuple[str, str]:
+    """Return (text, category-label) for the ticker."""
+    alert_text = normalize.alerts_ticker_text(alerts)
+    if alerts and headlines:
+        return (f"{alert_text}  •  " + "  •  ".join(headlines), "ALERTS")
+    if alerts:
+        return (alert_text, "ALERTS")
+    if headlines:
+        return ("  •  ".join(headlines), "NEWS")
+    return (alert_text, "WEATHER")
+
+
 def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
-                  scale: float) -> tuple[list[Layer], PageCycler]:
+                  scale: float, alert_poller: Optional[NWSAlertPoller] = None,
+                  ) -> tuple[list[Layer], PageCycler]:
     layers: list[Layer] = []
     pages: list[dict] = []
 
@@ -488,6 +487,22 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
 
     def read(key: str, default=None):
         return store.get(key, default)
+
+    def nws_live() -> Optional[list[dict]]:
+        return alert_poller.alerts() if alert_poller is not None else None
+
+    def live_alerts() -> list[dict]:
+        """NWS alerts while that poller is fresh (US, ~1 min old at most),
+        otherwise the ones inside the last Pirate Weather forecast."""
+        fresh = nws_live()
+        return fresh if fresh is not None else (read("alerts", []) or [])
+
+    def ticker_parts() -> tuple[str, str]:
+        alerts = live_alerts()
+        error = read("error")
+        if error and not alerts:
+            return (f"Pirate Weather unavailable — {error}", "STATUS")
+        return _ticker_parts(alerts, list(read("headlines", []) or []))
 
     def content_bounds(top: int, bottom_extra: int = 24) -> tuple[int, int, int, int]:
         x = s(48)
@@ -527,9 +542,9 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
         # are never sent.
         min_interval=1.0 / max(1, cfg.output_fps),
         px_per_sec=max(1, int(round(cfg.ticker_speed_px_per_sec * scale))),
-        get_text=lambda: str(read("ticker_text", "") or ""),
-        get_label=lambda: str(read("ticker_label", "WEATHER") or "WEATHER"),
-        get_accent=lambda: theme.ALERT if read("alerts", []) else theme.ACCENT,
+        get_text=lambda: ticker_parts()[0],
+        get_label=lambda: ticker_parts()[1],
+        get_accent=lambda: theme.ALERT if live_alerts() else theme.ACCENT,
         scale=scale,
     )
     ticker.z = 200
@@ -539,8 +554,10 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
     # page cards (which start at y=262), on every page.
     alert_bar = AlertBarLayer(
         x=s(48), y=s(layout.HEADER_H + 10), w=render_w - s(96), h=s(56, 1),
-        get_alerts=lambda: read("alerts", []) or [],
-        get_error=lambda: read("error"),
+        get_alerts=live_alerts,
+        # With the NWS answering, alert status is known even if the forecast
+        # call is failing, so only report the error when we're blind.
+        get_error=lambda: None if nws_live() is not None else read("error"),
         scale=scale,
     )
     alert_bar.z = 200
@@ -820,8 +837,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         [int(round(v * scale)) for v in (62, 84, 96, 190)],
     )
 
+    alert_poller = NWSAlertPoller(cfg.lat, cfg.lon, cfg.user_agent)
+    alert_poller.start()
     store = _make_datastore(cfg, client, units, output_w, output_h, scale)
-    layers, cycler = _build_layers(cfg, store, output_w, output_h, scale)
+    layers, cycler = _build_layers(cfg, store, output_w, output_h, scale, alert_poller)
     compositor = Compositor(w=output_w, h=output_h)
     scheduler = Scheduler(layers=layers, cfr_hz=cfg.output_fps)
     cycler.start()
@@ -838,7 +857,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        for shutdown in (store.stop, cycler.stop, streamer.stop):
+        for shutdown in (store.stop, cycler.stop, alert_poller.stop, streamer.stop):
             try:
                 shutdown()
             except Exception:

@@ -120,6 +120,17 @@ def _clock(epoch: Any, fmt: str = "%I:%M %p") -> str:
     return dt.strftime(fmt).lstrip("0")
 
 
+def until_label(epoch: Any) -> str:
+    """Alert end time: '7:00 PM' when it's today, 'Fri 7:00 PM' otherwise."""
+    dt = _local_dt(epoch)
+    if not dt:
+        return "--"
+    text = dt.strftime("%I:%M %p").lstrip("0")
+    if dt.date() != datetime.now(dt.tzinfo).date():
+        text = f"{dt.strftime('%a')} {text}"
+    return text
+
+
 def _hour_label(epoch: Any) -> str:
     dt = _local_dt(epoch)
     if not dt:
@@ -734,7 +745,7 @@ def build_alerts(payload: dict) -> list[dict]:
                 "severity": severity,
                 "level": alert_level(title, severity),
                 "regions": region_text,
-                "expires": _clock(item.get("expires")),
+                "expires": until_label(item.get("expires")),
                 "description": str(item.get("description") or "").strip(),
             }
         )
