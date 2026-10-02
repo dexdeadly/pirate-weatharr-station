@@ -166,11 +166,14 @@ class CurrentLayer(AnimatedIconsMixin, Layer):
         value_font = theme.font(self.s(46, 14), "bold")
         small_font = theme.font(self.s(30, 11), "bold")
 
-        # Today's high / low side by side
+        # High / low side by side. Each value carries a caption naming the
+        # period it covers (TODAY / TONIGHT / TOMORROW / OVERNIGHT - see
+        # normalize._high_low_pair), since the pair isn't always "today".
         half = (w - self.s(48)) // 2
-        for offset, (name, key, fkey, color) in enumerate((
-            ("High", "high_display", "high_f", theme.AMBER),
-            ("Low", "low_display", "low_f", theme.CYAN),
+        caption_font = theme.font(self.s(17, 8), "semibold")
+        for offset, (name, key, fkey, pkey, color) in enumerate((
+            ("High", "high_display", "high_f", "high_period", theme.AMBER),
+            ("Low", "low_display", "low_f", "low_period", theme.CYAN),
         )):
             cx = inner_x + offset * half
             theme.label(draw, (cx, cursor), name, label_font,
@@ -178,7 +181,22 @@ class CurrentLayer(AnimatedIconsMixin, Layer):
             value = str(data.get(key) or "--°")
             tint = theme.temp_color(data.get(fkey)) if data.get(fkey) is not None else color
             draw.text((cx, cursor + self.s(24)), value, font=value_font, fill=tint)
+            period = str(data.get(pkey) or "").upper()
+            if period:
+                # Fit within this half with a clear gap before the next one.
+                cap_font, cap_track = caption_font, self.s(2, 1)
+                room = half - self.s(16)
+                for size, track in ((17, 2), (15, 1), (13, 1)):
+                    cap_font, cap_track = theme.font(self.s(size, 8), "semibold"), self.s(track, 1)
+                    if theme.tracked_width(draw, period, cap_font, cap_track) <= room:
+                        break
+                else:
+                    # Small resolutions: abbreviate rather than collide.
+                    period = {"TOMORROW": "TMRW", "OVERNIGHT": "O'NIGHT"}.get(period, period)
+                theme.label(draw, (cx, cursor + self.s(24) + theme.line_height(value_font) + self.s(2)),
+                            period, cap_font, fill=theme.TEXT_MUTED, tracking=cap_track)
 
+        cursor += self.s(20) + theme.line_height(caption_font)
         cursor += self.s(24) + theme.line_height(value_font) + self.s(16)
 
         # Divider

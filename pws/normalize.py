@@ -218,6 +218,69 @@ def summary_text(raw: Any, fallback: str = "Current conditions") -> str:
 # Current conditions
 # ---------------------------------------------------------------------------
 
+#: Local hours bounding Pirate Weather's daytime-high window (06:01-18:00);
+#: its overnight low covers 18:01 to 06:00 the next morning.
+DAY_START_HOUR = 6
+EVENING_HOUR = 18
+
+
+def _high_low_pair(payload: dict, units: Units) -> dict:
+    """
+    The High/Low pair for the Current Conditions rail, labelled for when it is.
+
+    ``daily[n].temperatureHigh`` is the 6 am-6 pm high and ``temperatureLow``
+    the following *overnight* low, so a bare "High / Low" read wrong at the
+    ends of the day: before dawn the current temperature could sit below the
+    shown "Low" (tonight's, not this morning's), and on a warm evening above a
+    "High" that ended at 6 pm. Each slot now says which period it covers:
+
+    * 06:00-17:59  Today's High    / Tonight's Low
+    * 18:00-23:59  Tomorrow's High / Tonight's Low
+    * 00:00-05:59  Today's High    / Overnight Low (lowest of now..6 am,
+      from the hourly forecast - the API has no field for the night already
+      under way)
+    """
+    cur = payload.get("currently") or {}
+    days = (payload.get("daily") or {}).get("data") or []
+    now = _local_dt(cur.get("time"))
+    hour = now.hour if now else 12
+
+    if hour >= EVENING_HOUR:
+        high_day = days[1] if len(days) > 1 else {}
+        high_label, low_label = "Tomorrow's High", "Tonight's Low"
+        low = _num((days[0] if days else {}).get("temperatureLow"))
+    elif hour < DAY_START_HOUR:
+        high_day = days[0] if days else {}
+        high_label, low_label = "Today's High", "Overnight Low"
+        overnight = [_num(cur.get("temperature"))]
+        for entry in (payload.get("hourly") or {}).get("data") or []:
+            when = _local_dt(entry.get("time"))
+            if when is None or now is None or when < now.replace(minute=0, second=0, microsecond=0):
+                continue
+            if when.date() != now.date() or when.hour > DAY_START_HOUR:
+                break
+            overnight.append(_num(entry.get("temperature")))
+        values = [v for v in overnight if v is not None]
+        low = min(values) if values else None
+    else:
+        high_day = days[0] if days else {}
+        high_label, low_label = "Today's High", "Tonight's Low"
+        low = _num((days[0] if days else {}).get("temperatureLow"))
+
+    high = _num(high_day.get("temperatureHigh"))
+    return {
+        "high_label": high_label,
+        "low_label": low_label,
+        # Just the period word, for captions under the values.
+        "high_period": high_label.split("'")[0].split()[0],
+        "low_period": low_label.split("'")[0].split()[0],
+        "high_display": _deg(high, units),
+        "low_display": _deg(low, units),
+        "high_f": to_fahrenheit(high, units),
+        "low_f": to_fahrenheit(low, units),
+    }
+
+
 def build_current(payload: dict, units: Units, location_name: str) -> dict:
     """Flatten the ``currently`` block (enriched from ``daily[0]``)."""
     cur = payload.get("currently") or {}
@@ -264,10 +327,7 @@ def build_current(payload: dict, units: Units, location_name: str) -> dict:
         "cloud_display": _pct(cur.get("cloudCover")),
         "precip_prob_display": _pct(cur.get("precipProbability")),
         "precip_type": str(cur.get("precipType") or "none").title(),
-        "high_display": _deg(today.get("temperatureHigh"), units),
-        "low_display": _deg(today.get("temperatureLow"), units),
-        "high_f": to_fahrenheit(_num(today.get("temperatureHigh")), units),
-        "low_f": to_fahrenheit(_num(today.get("temperatureLow")), units),
+        **_high_low_pair(payload, units),
         "sunrise": _clock(today.get("sunriseTime")),
         "sunset": _clock(today.get("sunsetTime")),
         "observed_time": _clock(cur.get("time"), "%I:%M %p"),
@@ -393,8 +453,12 @@ def _accumulation(day: dict, units: Units) -> str:
 def build_forecast_periods(payload: dict, units: Units, limit: int = 2) -> list[dict]:
     """Narrative panels for the text-forecast page."""
     rows = (payload.get("daily") or {}).get("data") or []
+    # After 6 pm today's daytime panel is already over (its high was set
+    # hours ago), so lead with tomorrow instead.
+    now = _local_dt((payload.get("currently") or {}).get("time"))
+    first = 1 if now is not None and now.hour >= EVENING_HOUR and len(rows) > 1 else 0
     out: list[dict] = []
-    for idx, entry in enumerate(rows[: max(1, int(limit))]):
+    for idx, entry in enumerate(rows[first: first + max(1, int(limit))], start=first):
         dt = _local_dt(entry.get("time"))
         if idx == 0:
             name = "Today"
