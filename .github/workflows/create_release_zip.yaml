@@ -57,10 +57,6 @@ jobs:
             --exclude='.agents' --exclude='.codex' --exclude='.beads' \
             --exclude='.claude' --exclude='AGENTS.md' --exclude='CLAUDE.md' \
             --exclude='.gitignore' --exclude='__pycache__' \
-            --exclude='assets/music/*.mp3' --exclude='assets/music/*.m4a' \
-            --exclude='assets/music/*.aac' --exclude='assets/music/*.flac' \
-            --exclude='assets/music/*.ogg' --exclude='assets/music/*.oga' \
-            --exclude='assets/music/*.wav' \
             ./ /tmp/pws-release/pws/
           (cd /tmp/pws-release && zip -rq "$OLDPWD/$ZIP_NAME" pws)
           echo "zip_name=$ZIP_NAME" >> "$GITHUB_ENV"

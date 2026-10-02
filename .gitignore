@@ -41,10 +41,5 @@ Thumbs.db
 AGENTS.md
 CLAUDE.md
 
-# Background music is user-supplied (see assets/music/README.txt); tracks of
-# unclear licence must not be committed or bundled into releases.
-assets/music/*
-!assets/music/README.txt
-
 # Local test builds
 /test.zip

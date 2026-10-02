@@ -226,10 +226,11 @@ _SHARED_FIELDS: list[dict[str, Any]] = [
         "max": 100,
         "step": 5,
         "help_text": (
-            "0 disables music. NOTE: no audio ships with the plugin - drop "
-            "your own .mp3/.m4a/.aac/.flac/.ogg/.wav files into the plugin's "
-            "assets/music folder, then restart. One is chosen at random and "
-            "looped for the run. pws.log records which track was picked."
+            "0 disables music. A few example tracks are included in the "
+            "plugin's assets/music folder; add your own .mp3/.m4a/.aac/.flac/"
+            ".ogg/.wav files there (or remove the examples), then restart. One "
+            "is chosen at random and looped for the run. pws.log records which "
+            "track was picked."
         ),
     },
     {

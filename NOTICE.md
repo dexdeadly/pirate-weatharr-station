@@ -78,6 +78,11 @@ independent implementations.
   Creative Commons Attribution 4.0, free for non-commercial use; tide
   predictions from [NOAA CO-OPS](https://tidesandcurrents.noaa.gov/) (public
   domain US government work)
+- Example background music in `assets/music/`:
+  - "Aurora" by Luke Bergs — [freetouse.com](https://freetouse.com)
+  - "Shelter in Place" (track 333970) and three tracks by Redproductions
+    (21024, 130528, 187839) — sourced from [Pixabay](https://pixabay.com/music/)
+    under the Pixabay Content License
 - Base map tiles: [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors
 - Typeface: [Inter](https://rsms.me/inter/) by Rasmus Andersson, SIL Open Font
   License 1.1 (full text in `assets/fonts/Inter-LICENSE.txt`)

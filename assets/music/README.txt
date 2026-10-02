@@ -7,6 +7,6 @@ which track was chosen.
 
 Set that volume to 0 to disable music entirely.
 
-No audio ships with the plugin: music of unknown licensing is not something
-that can be redistributed. Supply your own files, or copy across the music from
-another weather-channel plugin you already have installed.
+A few example tracks ship in this folder so the channel has music out of the
+box. Add your own alongside them, or delete them to use only yours. Credits for
+the included tracks are in NOTICE.md.

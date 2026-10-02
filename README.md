@@ -282,8 +282,9 @@ says so instead of showing empty panels.
 
 ## Background music
 
-Music is off unless you supply it. Drop `.mp3`, `.m4a`, `.aac`, `.flac`,
-`.ogg` or `.wav` files into:
+A few example tracks ship with the plugin, so a fresh install has music out of
+the box. Add your own `.mp3`, `.m4a`, `.aac`, `.flac`, `.ogg` or `.wav` files
+(or delete the examples to use only yours) in:
 
 ```
 pws/assets/music/
@@ -292,11 +293,9 @@ pws/assets/music/
 Each run picks one at random, loops it indefinitely and mixes it under the video
 at the volume set in the plugin settings.
 
-**No audio ships with the plugin.** Bundling music of unknown licensing would
-not be redistributable, so an untouched install streams a silent audio track —
-the channel is valid and plays, there is simply nothing on the music bed. If you
-have another weather-channel plugin installed, copying its `assets/music`
-contents across works.
+If the folder is empty, or the volume is 0, the stream carries a silent audio
+track — the channel is valid and plays, there is simply nothing on the music
+bed. Credits for the included tracks are in `NOTICE.md`.
 
 Every startup logs what happened, so a silent channel is easy to diagnose from
 `pws.log`:
@@ -472,7 +471,7 @@ Logs are written to `pws/pws.log` inside the plugin folder.
 | "No stream profiles found" | Create a stream profile in Dispatcharr, ideally named `proxy` |
 | Channel exists but no video | Check `pws.log` for ffmpeg errors |
 | Channel is named "Station N - PWS" instead of a location | The plugin's install folder isn't named `pws` (see the naming note above), or Location Name/ZIP/Lat-Long are all blank for that station |
-| No background music | Nothing ships with the plugin — see below. `pws.log` says exactly what was found |
+| No background music | Volume is 0, or the music folder is empty (e.g. the examples were removed) — see below. `pws.log` says exactly what was found |
 | Radar echoes float on an empty background | The OpenStreetMap backdrop could not be fetched; `pws.log` logs `[radar] base map fetch failed`. Check the host can reach `tile.openstreetmap.org` |
 | Maps are empty | Regional lookups are paused for quota, or the cities refresh has not run yet |
 
