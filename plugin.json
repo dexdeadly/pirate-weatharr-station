@@ -137,6 +137,13 @@
       "help_text": "Optional RSS/Atom URLs, comma separated, shared by every station. Weather alerts always appear in the ticker regardless."
     },
     {
+      "id": "auto_start",
+      "label": "Auto-start Stations",
+      "type": "boolean",
+      "default": true,
+      "help_text": "Bring stations back automatically after Dispatcharr restarts or the plugin is updated, if they were running. Pressing Stop turns this off until the next Start."
+    },
+    {
       "id": "station_1_info",
       "label": "Station 1",
       "type": "info",
@@ -330,6 +337,13 @@
       "description": "Launch the PWS renderer and publish the channel.",
       "button_label": "Start",
       "button_color": "green"
+    },
+    {
+      "id": "restart",
+      "label": "Restart",
+      "description": "Stop and relaunch every enabled station with the current settings.",
+      "button_label": "Restart",
+      "button_color": "blue"
     },
     {
       "id": "stop",

@@ -10,6 +10,8 @@ the same forecast call, so there are no fields for them.
 """
 from __future__ import annotations
 
+import hashlib
+import logging
 import os
 import shutil
 import signal
@@ -60,6 +62,17 @@ except Exception:  # pragma: no cover - Windows
 
 _START_LOCK = threading.Lock()
 
+#: Seconds after the plugin loads before auto-start checks the stations: long
+#: enough for Dispatcharr's DB and workers to be up after a container start.
+_AUTOSTART_DELAY_SEC = 20
+
+#: One auto-start check per process (every uWSGI worker, daphne and Celery
+#: loads the plugin; the start lock and PID/token checks make the extra ones
+#: no-ops).
+_AUTOSTART_SCHEDULED = False
+
+_log = logging.getLogger("plugins.pws")
+
 #: How many independent stations (each its own channel) the plugin offers.
 _STATION_COUNT = 3
 
@@ -80,7 +93,14 @@ _RUNTIME_FIELDS = (
     "location_label",
     "output_url",
     "encoding",
+    "launch_spec",
 )
+
+#: Plugin-wide runtime keys (not per station).
+#: ``desired_running`` records that the user wants PWS on: set by Start and
+#: Restart, cleared by Stop, Reset and disabling/deleting the plugin. It is
+#: what auto-start restores after a Dispatcharr restart or plugin reload.
+_GLOBAL_RUNTIME_FIELDS = ("desired_running",)
 
 def _station_field_id(idx: int, field: str) -> str:
     """
@@ -222,6 +242,17 @@ _SHARED_FIELDS: list[dict[str, Any]] = [
             "Weather alerts always appear in the ticker regardless."
         ),
     },
+    {
+        "id": "auto_start",
+        "label": "Auto-start Stations",
+        "type": "boolean",
+        "default": True,
+        "help_text": (
+            "Bring stations back automatically after Dispatcharr restarts or "
+            "the plugin is updated, if they were running. Pressing Stop "
+            "turns this off until the next Start."
+        ),
+    },
 ]
 
 
@@ -340,6 +371,13 @@ class Plugin:
             "button_color": "green",
         },
         {
+            "id": "restart",
+            "label": "Restart",
+            "description": "Stop and relaunch every enabled station with the current settings.",
+            "button_label": "Restart",
+            "button_color": "blue",
+        },
+        {
             "id": "stop",
             "label": "Stop",
             "description": "Terminate the PWS renderer.",
@@ -398,6 +436,8 @@ class Plugin:
                                  "video_kbps": 3500}
         self._field_defaults = {f["id"]: f.get("default") for f in self.fields}
 
+        self._schedule_autostart()
+
     # -- entry point ------------------------------------------------------
 
     def run(self, action: str, params: Dict[str, Any],
@@ -409,8 +449,10 @@ class Plugin:
             response = self._handle_status(context)
         elif action == "start":
             response = self._handle_start(context)
+        elif action == "restart":
+            response = self._handle_restart(context)
         elif action == "stop":
-            response = self._handle_stop(context)
+            response = self._handle_stop(context, user_stop=True)
         elif action == "reset_defaults":
             response = self._handle_reset_defaults(context)
         else:
@@ -419,7 +461,14 @@ class Plugin:
         return self._finalize_response(response, context)
 
     def stop(self, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Called by Dispatcharr when the plugin is disabled; stops every station."""
+        """
+        Called by Dispatcharr when the plugin is disabled, deleted or reloaded.
+
+        A reload (e.g. installing a new version) keeps ``desired_running`` so
+        the fresh plugin instance auto-starts the stations again; disabling or
+        deleting clears it.
+        """
+        reason = (context or {}).get("reason")
         if not context or "settings" not in context:
             try:
                 cfg = PluginConfig.objects.get(key=self._plugin_key)
@@ -427,13 +476,83 @@ class Plugin:
             except PluginConfig.DoesNotExist:
                 settings = {}
             context = {"settings": settings, "logger": None}
-        return self._handle_stop(context)
+        return self._handle_stop(context, user_stop=reason != "reload")
+
+    # -- auto-start -------------------------------------------------------
+
+    def _schedule_autostart(self) -> None:
+        """Queue one delayed auto-start check for this process."""
+        global _AUTOSTART_SCHEDULED
+        if _AUTOSTART_SCHEDULED:
+            return
+        # Renderer processes import Django to watch for the plugin being
+        # disabled; they must never launch stations themselves.
+        if os.environ.get("PWS_RUN_TOKEN"):
+            return
+        _AUTOSTART_SCHEDULED = True
+        threading.Thread(target=self._autostart_after_delay,
+                         name="pws-autostart", daemon=True).start()
+
+    def _autostart_after_delay(self) -> None:
+        time.sleep(_AUTOSTART_DELAY_SEC)
+        try:
+            self._autostart()
+        except Exception:
+            _log.exception("PWS auto-start failed")
+        finally:
+            try:
+                from django.db import close_old_connections
+                close_old_connections()
+            except Exception:
+                pass
+
+    def _autostart(self) -> None:
+        """Relaunch stations that should be running but aren't."""
+        cfg = PluginConfig.objects.filter(key=self._plugin_key).first()
+        if not cfg or not cfg.enabled:
+            return
+        settings = dict(cfg.settings or {})
+        if not settings.get("desired_running"):
+            return
+        if not self._truthy(settings.get("auto_start", True)):
+            return
+        wanted = self._configured_stations(settings)
+        if not wanted or all(
+            self._is_process_running(self._station_runtime(settings, idx, "pid"),
+                                     self._station_runtime(settings, idx, "run_token"))
+            for idx in wanted
+        ):
+            return
+        _log.info("PWS auto-start: relaunching stations %s", wanted)
+        result = self._handle_start({"settings": settings, "logger": _log})
+        _log.info("PWS auto-start: %s", result.get("message"))
+
+    @staticmethod
+    def _truthy(raw: Any) -> bool:
+        if isinstance(raw, str):
+            return raw.strip().lower() in ("1", "true", "yes", "on")
+        return bool(raw)
 
     # -- actions ----------------------------------------------------------
 
     def _handle_start(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        # Hold the cross-process start lock for the whole decision. Auto-start
+        # runs in every Dispatcharr process at once; re-reading settings under
+        # the lock means a later process sees the PIDs an earlier one just
+        # launched instead of a stale snapshot, so stations never start twice.
+        with self._start_guard():
+            return self._handle_start_locked(context)
+
+    def _fresh_settings(self, fallback: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            cfg = PluginConfig.objects.get(key=self._plugin_key)
+            return dict(cfg.settings or {})
+        except Exception:
+            return dict(fallback or {})
+
+    def _handle_start_locked(self, context: Dict[str, Any]) -> Dict[str, Any]:
         logger = context.get("logger")
-        settings = dict(context.get("settings") or {})
+        settings = self._fresh_settings(context.get("settings") or {})
 
         api_key = (settings.get("api_key") or "").strip()
         if not api_key:
@@ -463,38 +582,39 @@ class Plugin:
         started: list[str] = []
         errors: list[str] = []
 
-        with self._start_guard():
-            # Stop any station that is running but no longer wanted.
-            for idx in self._station_indices():
-                if idx in wanted:
-                    continue
-                pid = self._station_runtime(settings, idx, "pid")
-                token = self._station_runtime(settings, idx, "run_token")
-                if pid and self._is_process_running(pid, token):
-                    self._terminate_process(pid, logger, expected_token=token)
-                    if logger:
-                        logger.info("PWS station %s stopped (no longer enabled)", idx)
-                if pid:
-                    clears.extend([_station_runtime_key(idx, "pid"),
-                                   _station_runtime_key(idx, "run_token")])
-                updates[_station_runtime_key(idx, "running")] = False
+        # Stop any station that is running but no longer wanted.
+        for idx in self._station_indices():
+            if idx in wanted:
+                continue
+            pid = self._station_runtime(settings, idx, "pid")
+            token = self._station_runtime(settings, idx, "run_token")
+            if pid and self._is_process_running(pid, token):
+                self._terminate_process(pid, logger, expected_token=token)
+                if logger:
+                    logger.info("PWS station %s stopped (no longer enabled)", idx)
+            if pid:
+                clears.extend([_station_runtime_key(idx, "pid"),
+                               _station_runtime_key(idx, "run_token")])
+            updates[_station_runtime_key(idx, "running")] = False
 
-            for idx in wanted:
-                result = self._start_station(
-                    idx, settings, api_key, desired,
-                    data_interval, regional_interval, logger,
-                )
-                if result.get("error"):
-                    errors.append(f"Station {idx}: {result['error']}")
-                    continue
-                if result.get("updates"):
-                    updates.update(result["updates"])
-                if result.get("clears"):
-                    clears.extend(result["clears"])
-                if result.get("label"):
-                    started.append(result["label"])
+        for idx in wanted:
+            result = self._start_station(
+                idx, settings, api_key, desired,
+                data_interval, regional_interval, logger,
+            )
+            if result.get("error"):
+                errors.append(f"Station {idx}: {result['error']}")
+                continue
+            if result.get("updates"):
+                updates.update(result["updates"])
+            if result.get("clears"):
+                clears.extend(result["clears"])
+            if result.get("label"):
+                started.append(result["label"])
 
-            persisted = self._persist_settings(updates, clear=clears)
+        if started:
+            updates["desired_running"] = True
+        persisted = self._persist_settings(updates, clear=clears)
 
         if not started:
             return {
@@ -531,23 +651,37 @@ class Plugin:
         # launch spec so editing it restarts a running renderer like an
         # encoding change does.
         desired = {**desired, "surf": self._station_surf(settings, idx)}
+        spec = self._launch_spec(idx, settings, api_key, desired,
+                                 data_interval, regional_interval)
 
         pid = self._station_runtime(settings, idx, "pid")
         run_token = self._station_runtime(settings, idx, "run_token")
 
         if pid and self._is_process_running(pid, run_token):
-            current = self._station_runtime(settings, idx, "encoding") or {}
-            changed = any(current.get(k) != desired.get(k)
-                          for k in ("fps", "width", "height", "video_kbps", "surf"))
+            stored_spec = self._station_runtime(settings, idx, "launch_spec")
+            if stored_spec is not None:
+                # Anything that reaches the renderer's command line or
+                # environment: location, units, radar, music, feeds, refresh
+                # cadence, output, surf spot, API key.
+                changed = stored_spec != spec
+            else:
+                # Station launched by an older version: fall back to the
+                # encoding comparison it recorded.
+                current = self._station_runtime(settings, idx, "encoding") or {}
+                changed = any(current.get(k) != desired.get(k)
+                              for k in ("fps", "width", "height", "video_kbps", "surf"))
             if not changed:
                 updates[rk("output_url")] = stream_url
                 updates[rk("running")] = True
+                # Record the spec for stations launched before it existed, so
+                # the next settings change is detected.
+                updates[rk("launch_spec")] = spec
                 label = (self._station_runtime(settings, idx, "location_label")
                          or fallback_label)
                 return {"updates": updates, "clears": clears,
                         "label": f"{label} (already running)"}
             if logger:
-                logger.info("Station %s output changed; restarting", idx)
+                logger.info("Station %s settings changed; restarting", idx)
             self._terminate_process(pid, logger, expected_token=run_token)
             clears.extend([rk("pid"), rk("run_token")])
             pid = None
@@ -555,7 +689,7 @@ class Plugin:
         if pid and not self._is_process_running(pid, run_token):
             clears.extend([rk("pid"), rk("run_token")])
 
-        if not self._is_port_available(port):
+        if not self._wait_for_port(port):
             return {"error": f"port {port} is already in use"}
 
         location_label = (
@@ -597,16 +731,22 @@ class Plugin:
             rk("location_label"): location_label,
             rk("output_url"): stream_url,
             rk("encoding"): desired,
+            rk("launch_spec"): spec,
         })
         label = location_label or fallback_label
         return {"updates": updates, "clears": clears,
                 "label": f"{label} on ch {channel.channel_number}"}
 
-    def _handle_stop(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_stop(self, context: Dict[str, Any], *,
+                     user_stop: bool = False) -> Dict[str, Any]:
         logger = context.get("logger")
         settings = dict(context.get("settings") or {})
 
         updates: Dict[str, Any] = {}
+        if user_stop:
+            # An explicit Stop (or disabling the plugin) means "stay off":
+            # auto-start must not bring the stations back.
+            updates["desired_running"] = False
         clears: list[str] = []
         stopped = 0
 
@@ -660,6 +800,16 @@ class Plugin:
             "settings": settings,
         }
 
+    def _handle_restart(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Stop every station, then start the enabled ones with current settings."""
+        stopped = self._handle_stop(context)
+        start_context = dict(context)
+        start_context["settings"] = dict(stopped.get("settings") or {})
+        result = self._handle_start(start_context)
+        if result.get("status") == "running":
+            result["message"] = "Restarted. " + str(result.get("message") or "")
+        return result
+
     def _handle_reset_defaults(self, context: Dict[str, Any]) -> Dict[str, Any]:
         logger = context.get("logger")
         settings = dict(context.get("settings") or {})
@@ -667,7 +817,8 @@ class Plugin:
         if running:
             stop_context = dict(context)
             stop_context["settings"] = settings
-            settings = dict(self._handle_stop(stop_context).get("settings") or {})
+            settings = dict(self._handle_stop(stop_context, user_stop=True)
+                            .get("settings") or {})
 
         defaults = {f["id"]: f.get("default") for f in self.fields}
         clears = []
@@ -677,6 +828,7 @@ class Plugin:
                 if key not in defaults:
                     clears.append(key)
             defaults[_station_runtime_key(idx, "running")] = False
+        defaults["desired_running"] = False
         persisted = self._persist_settings(defaults, clear=clears)
         if logger:
             logger.info("PWS settings reset to defaults.")
@@ -781,10 +933,35 @@ class Plugin:
         return self._field_defaults.get(key)
 
     def _station_enabled(self, settings: Dict[str, Any], idx: int) -> bool:
-        raw = self._station_setting(settings, idx, "enabled")
-        if isinstance(raw, str):
-            return raw.strip().lower() in ("1", "true", "yes", "on")
-        return bool(raw)
+        return self._truthy(self._station_setting(settings, idx, "enabled"))
+
+    def _launch_spec(self, idx: int, settings: Dict[str, Any], api_key: str,
+                     desired: Dict[str, Any], data_interval: int,
+                     regional_interval: int) -> Dict[str, Any]:
+        """
+        Everything a station's renderer is launched with, for change detection.
+
+        Compared against the spec recorded at launch, so editing any setting
+        and pressing Start relaunches that station instead of reporting
+        "already running" with the old configuration. The API key is stored
+        only as a short hash.
+        """
+        zip_code = self._station_zip(settings, idx)
+        coords = None if zip_code else self._station_coords(settings, idx)
+        return {
+            "zip": zip_code,
+            "coords": list(coords) if coords else None,
+            "location_name": str(self._station_setting(settings, idx, "location_name") or "").strip(),
+            "units": settings.get("units") or "us",
+            "radar_source": settings.get("radar_source") or "noaa",
+            "music_volume": round(self._music_volume(settings), 2),
+            "data_interval": int(data_interval),
+            "regional_interval": int(regional_interval),
+            "rss": self._sanitize_rss_urls(settings.get("rss_urls") or ""),
+            "encoding": {k: desired.get(k) for k in ("fps", "width", "height", "video_kbps")},
+            "surf": desired.get("surf"),
+            "key": hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:12],
+        }
 
     def _station_zip(self, settings: Dict[str, Any], idx: int) -> str:
         return str(self._station_setting(settings, idx, "zip_code") or "").strip()
@@ -872,7 +1049,7 @@ class Plugin:
         return base_sec * n, base_sec * 9 * n
 
     def _allowed_setting_keys(self) -> set[str]:
-        keys = {f["id"] for f in self.fields}
+        keys = {f["id"] for f in self.fields} | set(_GLOBAL_RUNTIME_FIELDS)
         for idx in self._station_indices():
             for name in _RUNTIME_FIELDS:
                 keys.add(_station_runtime_key(idx, name))
@@ -887,7 +1064,13 @@ class Plugin:
             stored = dict(cfg.settings or {})
             stored.update(updates)
             for key in clear:
-                stored.pop(key, None)
+                # A key that is both cleared and updated was replaced: a
+                # restart clears the old pid/run_token and records the new
+                # ones in the same call. Popping it here used to erase the new
+                # PID, orphaning the renderer so the next Start launched a
+                # duplicate or failed on "port in use".
+                if key not in updates:
+                    stored.pop(key, None)
             stored = {k: v for k, v in stored.items() if k in allowed}
             cfg.settings = stored
             cfg.save(update_fields=["settings", "updated_at"])
@@ -911,6 +1094,19 @@ class Plugin:
                     except Exception:
                         pass
                     lock_file.close()
+
+    def _wait_for_port(self, port: int, timeout: float = 5.0) -> bool:
+        """
+        True once ``port`` is free. A station that was just stopped for a
+        restart can hold its port for a moment while ffmpeg exits.
+        """
+        deadline = time.time() + timeout
+        while True:
+            if self._is_port_available(port):
+                return True
+            if time.time() >= deadline:
+                return False
+            time.sleep(0.25)
 
     def _is_port_available(self, port: int, host: str = "127.0.0.1") -> bool:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -1224,6 +1420,10 @@ class Plugin:
         env["PWS_RUN_TOKEN"] = run_token
         env["PWS_STATION_INDEX"] = str(idx)
         env.setdefault("DJANGO_SETTINGS_MODULE", "dispatcharr.settings")
+        # The renderer only calls django.setup() to watch for the plugin being
+        # disabled. Without this, that runs Dispatcharr's plugin discovery and
+        # imports every installed plugin inside every renderer process.
+        env["DISPATCHARR_SKIP_PLUGIN_AUTODISCOVERY"] = "1"
         # Never write .pyc caches into the plugin directory: it's shared by
         # every station process, and a cache file created under one identity
         # (container user, host user, whatever) blocks every other process
