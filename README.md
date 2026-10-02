@@ -19,7 +19,7 @@ seconds each:
 
 | Page | Contents |
 |---|---|
-| Current Conditions | Oversized temperature, condition icon, high/low, sun times, eight metric tiles |
+| Current Conditions | Oversized temperature, condition icon, high/low labelled with the period they cover (see below), sun times, eight metric tiles |
 | 12-Hour Trend | Temperature curve with precipitation-chance and cloud-cover series |
 | 7-Day Forecast | Day cards with icons, highs/lows, a shared temperature range bar, plus precipitation, humidity, wind, gusts, cloud cover and UV per day |
 | Live Radar | Animated NEXRAD/MRMS radar from NOAA over an OpenStreetMap base, with a dBZ legend and a source credit |
@@ -69,8 +69,31 @@ alert bar:
 The event name decides the tier before severity does, because NWS severities
 are coarse (a Flood Watch is routinely "Severe" yet belongs in amber). With
 several alerts active the bar rotates through them, most serious first, about
-8 seconds each, and shows "1 of 3". Alerts come from Pirate Weather, which
-carries NWS alerts for the US.
+8 seconds each, and shows "1 of 3". Alert end times that aren't today include
+the weekday ("until Fri 7:00 PM").
+
+**Alert source.** For US locations PWS polls the National Weather Service's
+alerts API directly every 60 seconds (free, no API key, no Pirate Weather
+quota), so a new warning reaches the screen within about a minute instead of
+waiting for the next forecast refresh — which with three stations could be 30
+minutes. Outside the US, or if the NWS can't be reached for five minutes, the
+bar falls back to the alerts carried in the Pirate Weather forecast.
+
+### High and low
+
+Pirate Weather's daily high covers 6 am–6 pm and its low the *following*
+overnight (6 pm–6 am), so a plain "High / Low" could contradict the current
+temperature at either end of the day. The Current Conditions pair follows the
+station's local time and captions each value with its period:
+
+| Local time | High | Low |
+|---|---|---|
+| 6 am – 6 pm | today | tonight |
+| 6 pm – midnight | tomorrow | tonight |
+| midnight – 6 am | today | overnight (lowest from now to 6 am, from the hourly forecast) |
+
+After 6 pm the Extended Forecast also starts at Tomorrow rather than a "Today"
+whose high has already passed.
 
 ---
 
@@ -141,6 +164,19 @@ existing channel rather than creating a new one.
 Disabling a station and pressing **Start** again stops just that station and
 leaves the others running. **Stop** halts all of them.
 
+### Changing settings, Restart and auto-start
+
+Edit any setting and press **Start**: each running station compares what it was
+launched with (location, units, radar, music, feeds, refresh interval, output,
+surf spot, API key) and relaunches only if something changed; unchanged
+stations keep running. **Restart** stops and relaunches every enabled station
+regardless.
+
+With **Auto-start Stations** on (the default), stations that were running come
+back by themselves about 20 seconds after Dispatcharr restarts or the plugin is
+updated. Pressing **Stop**, Reset to Defaults, or disabling the plugin turns
+that off until the next Start, so a station you stopped stays stopped.
+
 ### Requirements
 
 - Dispatcharr with plugin support
@@ -186,6 +222,7 @@ same forecast response, so there are no fields for them.
 | Surf Spot Name (per station) | no | On-screen name for the break, e.g. Huntington Pier |
 | Channel Number (per station) | no | Auto-assigned from 1000 when blank |
 | News Ticker Feeds | no | Comma-separated RSS/Atom URLs |
+| Auto-start Stations | no | On by default. Relaunch stations that were running after Dispatcharr restarts or the plugin updates |
 
 Frame rate is fixed at 30 fps.
 
@@ -252,8 +289,8 @@ Music is off unless you supply it. Drop `.mp3`, `.m4a`, `.aac`, `.flac`,
 pws/assets/music/
 ```
 
-They are shuffled, looped indefinitely and mixed under the video at the volume
-set in the plugin settings.
+Each run picks one at random, loops it indefinitely and mixes it under the video
+at the volume set in the plugin settings.
 
 **No audio ships with the plugin.** Bundling music of unknown licensing would
 not be redistributable, so an untouched install streams a silent audio track —
