@@ -1,8 +1,9 @@
 Background music for PWS.
 
-Drop .mp3/.m4a/.aac/.flac/.ogg/.wav files in this folder. PWS builds a playlist
-from them in filename order, loops it indefinitely, and mixes it under the
-video at the volume set in the plugin settings ("Background Music Volume").
+Drop .mp3/.m4a/.aac/.flac/.ogg/.wav files in this folder, then restart the
+station. Each run picks one track at random and loops it under the video at the
+volume set in the plugin settings ("Background Music Volume"); pws.log records
+which track was chosen.
 
 Set that volume to 0 to disable music entirely.
 

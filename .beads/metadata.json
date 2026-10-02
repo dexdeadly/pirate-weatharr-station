@@ -1,7 +1,0 @@
-{
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "embedded",
-  "dolt_database": "pirate_weatharr_station",
-  "project_id": "b6c1c786-23ec-4e60-af4c-bfded8caab6d"
-}

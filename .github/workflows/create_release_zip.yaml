@@ -50,7 +50,18 @@ jobs:
           # on every release, orphaning the previous install's settings,
           # channels and API key on every update.
           rm -rf /tmp/pws-release && mkdir -p /tmp/pws-release/pws
-          rsync -a --exclude='.git' --exclude='.github' --exclude='*.zip' ./ /tmp/pws-release/pws/
+          # Ship only what the plugin needs at runtime. These paths are also
+          # gitignored; excluding them here keeps a stray re-add out of releases.
+          rsync -a \
+            --exclude='.git' --exclude='.github' --exclude='*.zip' \
+            --exclude='.agents' --exclude='.codex' --exclude='.beads' \
+            --exclude='.claude' --exclude='AGENTS.md' --exclude='CLAUDE.md' \
+            --exclude='.gitignore' --exclude='__pycache__' \
+            --exclude='assets/music/*.mp3' --exclude='assets/music/*.m4a' \
+            --exclude='assets/music/*.aac' --exclude='assets/music/*.flac' \
+            --exclude='assets/music/*.ogg' --exclude='assets/music/*.oga' \
+            --exclude='assets/music/*.wav' \
+            ./ /tmp/pws-release/pws/
           (cd /tmp/pws-release && zip -rq "$OLDPWD/$ZIP_NAME" pws)
           echo "zip_name=$ZIP_NAME" >> "$GITHUB_ENV"
 
