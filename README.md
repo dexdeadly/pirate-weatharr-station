@@ -23,7 +23,7 @@ seconds each:
 | 12-Hour Trend | Temperature curve with precipitation-chance and cloud-cover series |
 | 7-Day Forecast | Day cards with icons, highs/lows, a shared temperature range bar, plus precipitation, humidity, wind, gusts, cloud cover and UV per day |
 | Live Radar | Animated NEXRAD/MRMS radar from NOAA over an OpenStreetMap base, with a dBZ legend and a source credit |
-| Regional Conditions | Current temperatures at nearby cities, plotted on a map |
+| Regional Conditions | Current temperatures at nearby cities, plotted on a map (see [Map cities](#map-cities)) |
 | Forecast Highs | Tomorrow's highs at those same cities |
 | Extended Forecast | Narrative panels for today and tomorrow with an eight-value stat grid, feels-like, accumulation, visibility and moon phase |
 | Surf Report | Only when a surf spot is set. Estimated surf height and rating, primary/secondary swell, wind, water temperature, next tides and a 5-day wave outlook. See [Surf report](#surf-report) |
@@ -227,6 +227,29 @@ same forecast response, so there are no fields for them.
 Frame rate is fixed at 30 fps.
 
 ---
+
+## Map cities
+
+Regional Conditions and Forecast Highs plot up to six cities around the
+station, chosen offline from the bundled GeoNames table (places of 15,000+
+people, worldwide):
+
+- **Not the station's own area.** Nothing within 20 miles, no smaller suburb
+  within 40 miles (a distinct city of 500,000+ that close still counts, e.g.
+  Philadelphia for Levittown), and nothing with the station's own name. The
+  map is still framed around the station; it just doesn't pin it.
+- **Big and nearby wins.** Each city's population is weighted down with
+  distance (halved at 75 miles), and cities in another country count for about
+  a third, so the map stays regional.
+- **Spread out.** Picks are made greedily with at least 50 miles between them
+  (relaxed to 35, then 25, only if six don't fit), so they surround the
+  station instead of stacking on one metro, and boroughs or neighbourhoods
+  next to a bigger city are skipped.
+- **Search 200 miles first,** widening to 360 only if too few cities fit, and
+  falling back to the nearest places at any distance in very remote spots.
+
+Each city costs one Pirate Weather call per regional refresh (every 90 minutes
+for one station), and lookups pause when the monthly quota runs low.
 
 ## Radar
 

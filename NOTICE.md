@@ -21,7 +21,6 @@ import renaming (`weatherstream` → `pws`) and formatting:
 | `pws/core/datastore.py` | Background refresh thread |
 | `pws/map_tiles.py` | OpenStreetMap base maps and RainViewer radar frames |
 | `pws/utils.py` | Timezone, geometry and formatting helpers |
-| `pws/data/major_cities.py` | Nearby-city lookup table |
 
 `pws/data/zipcodes.py` started from the same upstream file but now resolves
 primarily from a bundled offline table (`pws/data/us_zipcodes.csv`, see below),
@@ -47,6 +46,8 @@ backoff added.
 `pws/noaa_radar.py`, `pws/icons_anim.py`, `pws/layers/anim_icons.py`,
 `pws/layers/almanac.py`,
 `pws/layers/header_current.py`, `pws/layers/maps.py`, `pws/surf.py`,
+`pws/data/major_cities.py` (rewritten in v1.5.0; upstream's `us_cities.csv`
+table it used was removed),
 `pws/layers/surf.py` and `pws/layers/alert_bar.py` were written for this
 project.
 

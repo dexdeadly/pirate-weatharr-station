@@ -182,8 +182,10 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
         if not client.budget_ok_for_secondary():
             return
 
+        # Spread-out cities around the station, never the station's own area
+        # (see pws/data/major_cities.py for how they're chosen).
         targets = major_cities_near(
-            lat, lon, max_distance=360.0, max_results=cfg.regional_cities
+            lat, lon, max_results=cfg.regional_cities, home_name=cfg.location_name
         )
         current_points: list[dict] = []
         forecast_points: list[dict] = []
@@ -359,38 +361,9 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
         data["hourly_points"] = normalize.build_hourly_points(payload, units, limit=12)
         data["almanac_rows"] = normalize.build_almanac(payload, units)
 
-
         _refresh_regional(now)
         regional_points = list(regional_state.get("current") or [])
         forecast_points = list(regional_state.get("forecast") or [])
-
-        # Always include the home location so the maps are never empty.
-        current = data["current"] or {}
-        if isinstance(current, dict):
-            home_current = {
-                "name": cfg.location_name.split(",")[0].strip() or "Home",
-                "lat": lat, "lon": lon,
-                "temp": current.get("temp_display", "--"),
-                "temp_f": current.get("temp_f"),
-                "condition": current.get("summary", ""),
-                "icon": current.get("icon", "clear-day"),
-                "is_day": current.get("is_day", True),
-            }
-            if not any(p.get("name") == home_current["name"] for p in regional_points):
-                regional_points.insert(0, home_current)
-            days = data.get("daily_days") or []
-            if isinstance(days, list) and days:
-                home_forecast = {
-                    "name": home_current["name"],
-                    "lat": lat, "lon": lon,
-                    "forecast_temp": normalize._deg(days[0].get("high"), units),
-                    "temp_f": days[0].get("high_f"),
-                    "forecast_short": days[0].get("short", ""),
-                    "icon": days[0].get("icon", "clear-day"),
-                    "is_day": True,
-                }
-                if not any(p.get("name") == home_forecast["name"] for p in forecast_points):
-                    forecast_points.insert(0, home_forecast)
 
         data["regional_points"] = regional_points
         data["forecast_points"] = forecast_points

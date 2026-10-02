@@ -1,234 +1,140 @@
-# Reused essentially unchanged from WeatharrStation by OkinawaBoss:
-#   https://github.com/OkinawaBoss/WeatharrStation
-#   (originally weatherstream/data/major_cities.py)
-# See NOTICE.md for provenance and licensing status.
+"""
+Pick the nearby cities plotted on the Regional Conditions and Forecast Highs
+maps.
+
+Replaces the upstream WeatharrStation picker, which took the *nearest* cities
+over 150k people from a US-only table. That table was geocoded by name alone
+(every "Columbus" carried Columbus, OH's coordinates; "Corona" had Corona, CA's
+population at a point in Queens), and "nearest first" clustered picks: a
+Levittown, PA station got five New York-area places stacked on one corner of
+the map, where their labels collided and hid each other.
+
+Now:
+
+* one catalog: the bundled GeoNames table (world_cities.csv, places of 15k+
+  with real coordinates and state/region), for the US and everywhere else;
+* the station's own area is never picked - nothing within HOME_EXCLUSION_MILES,
+  no smaller suburb within SUBURB_MILES, nothing sharing the station's name -
+  since the map is about its surroundings;
+* candidates are ranked by population weighted down steeply with distance, and
+  cities in another country count for less, so the map stays regional (search
+  REGIONAL_MILES first, widening to MAX_DISTANCE_MILES only if too few fit);
+* picks are chosen greedily with a minimum spacing between them, which spreads
+  them around the station and drops boroughs/neighbourhoods that sit on top of
+  a bigger city (Corona, Harlem, Astoria next to New York City).
+"""
 from __future__ import annotations
 
-import csv
-from dataclasses import dataclass
-from functools import lru_cache
 from math import atan2, cos, radians, sin, sqrt
-from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import List, Optional
+
+from pws.data.world_cities import _city_table
+
+#: Places this close to the station are its own area and are never plotted.
+HOME_EXCLUSION_MILES = 20.0
+#: Out to here, only distinct major cities (MAJOR_CITY_POP+) are plotted;
+#: smaller places are the station's own suburbs (Cypress for Houston).
+SUBURB_MILES = 40.0
+MAJOR_CITY_POP = 500_000
+#: Search radii: regional first, widened only if too few cities fit.
+REGIONAL_MILES = 200.0
+MAX_DISTANCE_MILES = 360.0
+#: Distance (miles) at which a city's weight has halved; see _score.
+DISTANCE_FALLOFF_MILES = 75.0
+#: Weight multiplier for cities outside the station's country.
+FOREIGN_WEIGHT = 0.35
+#: Minimum gap between picks, relaxed step by step only if too few cities fit.
+SPACING_STEPS_MILES = (50.0, 35.0, 25.0)
 
 
 def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     r = 3958.8
-    phi1 = radians(lat1)
-    phi2 = radians(lat2)
-    dphi = radians(lat2 - lat1)
-    dlambda = radians(lon2 - lon1)
+    phi1, phi2 = radians(lat1), radians(lat2)
+    dphi, dlambda = radians(lat2 - lat1), radians(lon2 - lon1)
     a = sin(dphi / 2.0) ** 2 + cos(phi1) * cos(phi2) * sin(dlambda / 2.0) ** 2
-    c = 2 * atan2(sqrt(a), sqrt(1 - a))
-    return r * c
+    return r * 2 * atan2(sqrt(a), sqrt(1 - a))
 
 
-DATA_PATH = Path(__file__).with_name("us_cities.csv")
-#: Fills in the rest of the world (see world_cities.py) so a station outside
-#: the US finds real nearby cities instead of the closest - often very
-#: distant - US ones, which is all the US-only catalog above could ever
-#: offer it.
-WORLD_DATA_PATH = Path(__file__).with_name("world_cities.csv")
-COUNTRIES_PATH = Path(__file__).with_name("countries.csv")
+def _score(population: int, dist: float) -> float:
+    """Population, halved at DISTANCE_FALLOFF_MILES and falling off beyond."""
+    return population / (1.0 + (dist / DISTANCE_FALLOFF_MILES) ** 2)
 
 
-@dataclass(frozen=True)
-class City:
-    name: str
-    lat: float
-    lon: float
-    population: int
+def _home_key(name: Optional[str]) -> str:
+    return (name or "").split(",")[0].strip().lower()
 
 
-@lru_cache(maxsize=1)
-def _country_names() -> dict[str, str]:
-    table: dict[str, str] = {}
-    try:
-        with COUNTRIES_PATH.open("r", encoding="utf-8", newline="") as fh:
-            for row in csv.DictReader(fh):
-                code = (row.get("code") or "").strip().upper()
-                name = (row.get("name") or "").strip()
-                if code and name:
-                    table[code] = name
-    except OSError:
-        pass
-    return table
-
-
-_MANUAL_ALIAS_KEYWORDS: dict[str, Sequence[str]] = {
-    "Houston": ["HOUSTON", "INTERCONTINENTAL", "ELLINGTON", "HOBBY"],
-    "Galveston": ["GALVESTON"],
-    "Lake Charles": ["LAKE CHARLES"],
-    "Baton Rouge": ["BATON ROUGE"],
-    "New Orleans": ["NEW ORLEANS"],
-    "Austin": ["AUSTIN"],
-    "San Antonio": ["SAN ANTONIO"],
-    "Dallas": ["DALLAS"],
-    "Corpus Christi": ["CORPUS", "CORPUS CHRISTI"],
-    "Victoria": ["VICTORIA"],
-}
-
-
-@lru_cache(maxsize=1)
-def _city_catalog() -> tuple[City, ...]:
-    catalog: list[City] = []
-    if DATA_PATH.exists():
-        with DATA_PATH.open(encoding="utf-8") as fh:
-            reader = csv.DictReader(fh)
-            for row in reader:
-                name = (row.get("name") or "").strip()
-                if not name:
-                    continue
-                try:
-                    lat = float(row.get("lat", ""))
-                    lon = float(row.get("lon", ""))
-                    pop_raw = (row.get("pop") or "0").replace(",", "").strip()
-                    population = int(float(pop_raw))
-                except (TypeError, ValueError):
-                    continue
-                catalog.append(City(name=name, lat=lat, lon=lon, population=population))
-
-    if WORLD_DATA_PATH.exists():
-        country_names = _country_names()
-        with WORLD_DATA_PATH.open(encoding="utf-8", newline="") as fh:
-            reader = csv.DictReader(fh)
-            for row in reader:
-                # The US list above is denser and long-established; skip its
-                # country here rather than duplicate/compete with it.
-                if (row.get("country") or "").strip().upper() == "US":
-                    continue
-                name = (row.get("name") or "").strip()
-                if not name:
-                    continue
-                try:
-                    lat = float(row.get("lat", ""))
-                    lon = float(row.get("lon", ""))
-                    population = int(float(row.get("population") or 0))
-                except (TypeError, ValueError):
-                    continue
-                country = (row.get("country") or "").strip().upper()
-                region = country_names.get(country, country)
-                label = f"{name}, {region}" if region else name
-                catalog.append(City(name=label, lat=lat, lon=lon, population=population))
-
-    catalog.sort(key=lambda c: c.population, reverse=True)
-    return tuple(catalog)
-
-
-@lru_cache(maxsize=1)
-def _alias_items() -> tuple[tuple[str, str], ...]:
-    items: list[tuple[str, str]] = []
-    for canonical, variants in _MANUAL_ALIAS_KEYWORDS.items():
-        for keyword in variants:
-            keyword = keyword.upper().strip()
-            if keyword:
-                items.append((keyword, canonical))
-    for city in _city_catalog():
-        key = city.name.upper().strip()
-        if key:
-            items.append((key, city.name))
-    # Longer keywords first so "SAN ANTONIO" wins before "SAN"
-    items.sort(key=lambda kv: len(kv[0]), reverse=True)
-    return tuple(items)
-
-
-def canonical_city_name(raw: str) -> str:
-    upper = (raw or "").upper()
-    if not upper:
-        return "Station"
-    for keyword, canonical in _alias_items():
-        if keyword in upper:
-            return canonical
-    return (raw or "").split(",")[0].strip() or "Station"
-
-
-def _iter_cities() -> tuple[City, ...]:
-    return _city_catalog()
-
-
-def _select_candidates(
-    lat: float,
-    lon: float,
-    *,
-    max_distance: float,
-    population_cutoffs: Sequence[int],
-) -> list[tuple[float, City]]:
-    catalog = _iter_cities()
-    if not catalog:
-        return []
-    for threshold in population_cutoffs:
-        candidates: list[tuple[float, City]] = []
-        for city in catalog:
-            if city.population < threshold:
-                continue
-            dist = _haversine_miles(lat, lon, city.lat, city.lon)
-            if dist <= max_distance:
-                candidates.append((dist, city))
-        if candidates:
-            return candidates
-    return []
+def _station_country(lat: float, lon: float) -> str:
+    best, best_d = "", float("inf")
+    for _name, country, _admin1, c_lat, c_lon, _pop in _city_table():
+        d = _haversine_miles(lat, lon, c_lat, c_lon)
+        if d < best_d:
+            best, best_d = country, d
+    return best
 
 
 def major_cities_near(
     lat: float,
     lon: float,
     *,
-    max_distance: float = 350.0,
-    min_population: int = 150_000,
-    max_results: int = 10,
+    max_distance: float = MAX_DISTANCE_MILES,
+    max_results: int = 6,
+    home_name: Optional[str] = None,
+    home_exclusion: float = HOME_EXCLUSION_MILES,
 ) -> List[dict]:
-    catalog = _iter_cities()
-    if not catalog:
+    """
+    Up to ``max_results`` well-spread cities around (lat, lon), most
+    significant first, excluding the station's own area.
+
+    Returns ``[{"name", "lat", "lon", "population", "distance"}, ...]``.
+    """
+    if max_results <= 0:
         return []
+    home = _home_key(home_name)
+    country = _station_country(lat, lon)
 
-    population_cutoffs: tuple[int, ...] = (
-        min_population,
-        100_000,
-        50_000,
-        25_000,
-        10_000,
-        0,
-    )
+    within: list[tuple[float, float, str, float, float, int]] = []
+    for name, c_country, _admin1, c_lat, c_lon, population in _city_table():
+        dist = _haversine_miles(lat, lon, c_lat, c_lon)
+        if dist > max_distance or dist <= home_exclusion:
+            continue
+        if dist <= SUBURB_MILES and population < MAJOR_CITY_POP:
+            continue
+        if home and name.strip().lower() == home:
+            continue
+        score = _score(population, dist) * (1.0 if c_country == country else FOREIGN_WEIGHT)
+        within.append((score, dist, name, c_lat, c_lon, population))
+    within.sort(key=lambda c: c[0], reverse=True)
 
-    selected = _select_candidates(
-        lat,
-        lon,
-        max_distance=max_distance,
-        population_cutoffs=population_cutoffs,
-    )
+    picked: list[tuple[float, float, str, float, float, int]] = []
+    for radius in (min(REGIONAL_MILES, max_distance), max_distance):
+        candidates = [c for c in within if c[1] <= radius]
+        for spacing in SPACING_STEPS_MILES:
+            for cand in candidates:
+                if len(picked) >= max_results:
+                    break
+                if cand in picked:
+                    continue
+                if all(_haversine_miles(cand[3], cand[4], p[3], p[4]) >= spacing
+                       for p in picked):
+                    picked.append(cand)
+            if len(picked) >= max_results:
+                break
+        if len(picked) >= max_results:
+            break
 
-    if not selected:
-        # Fall back to the closest large cities even if they are just outside the radius
-        selected = [
-            (_haversine_miles(lat, lon, city.lat, city.lon), city)
-            for city in catalog[: max_results * 5]
-        ]
-
-    selected.sort(key=lambda item: (item[0], -item[1].population))
-    trimmed = selected[:max_results]
-
-    results: List[dict] = []
-    for dist, city in trimmed:
-        obs_radius = max(60.0, min(120.0, dist * 0.75 + 35.0))
-        results.append(
-            {
-                "name": city.name,
-                "lat": city.lat,
-                "lon": city.lon,
-                "population": city.population,
-                "max_obs_distance": obs_radius,
-                "max_home_distance": max_distance,
-            }
+    if not picked:
+        # Nothing of 15k+ within range (remote interior, small islands): use
+        # the closest places at any distance so the map isn't empty.
+        nearest = sorted(
+            (_haversine_miles(lat, lon, c_lat, c_lon), name, c_lat, c_lon, population)
+            for name, _c, _a, c_lat, c_lon, population in _city_table()
         )
-    return results
+        picked = [(0.0, d, n, la, lo, pop) for d, n, la, lo, pop in nearest
+                  if d > home_exclusion and n.strip().lower() != home][:max_results]
 
-
-def nearest_observation_target(lat: float, lon: float, targets: Iterable[dict]) -> dict | None:
-    best = None
-    best_dist = float("inf")
-    for target in targets:
-        dist = _haversine_miles(lat, lon, target["lat"], target["lon"])
-        if dist < best_dist:
-            best = target
-            best_dist = dist
-    return best
+    return [
+        {"name": name, "lat": c_lat, "lon": c_lon, "population": population,
+         "distance": round(dist, 1)}
+        for _score_, dist, name, c_lat, c_lon, population in picked
+    ]
