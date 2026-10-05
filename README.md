@@ -99,25 +99,47 @@ whose high has already passed.
 
 ## Install
 
-1. Install the release zip through Dispatcharr's **Plugins → Import Plugin**
-   upload, or copy the folder manually into your Dispatcharr plugins
-   directory as:
+1. Install **PWS - Pirate Weatharr Station** from Dispatcharr's plugin
+   browser, or upload the release zip through **Plugins → Import Plugin**, or
+   copy the folder manually into your Dispatcharr plugins directory as:
 
    ```
-   /data/plugins/pws
+   /data/plugins/pirate_weatharr_station
    ```
 
    The folder name matters: Dispatcharr derives the plugin's permanent
-   identity (settings storage, channel/logo linkage) from it. The release
-   zip is already structured so importing it lands at `pws`; if copying
-   manually, the folder must be named exactly `pws` (lowercase) for that
-   identity to stay stable across future updates.
+   identity (settings storage, channel/logo linkage) from it, and a plugin
+   browser update only replaces the install whose folder matches the
+   registry name `pirate-weatharr-station` (as `pirate_weatharr_station`).
+   The release zip is already structured that way; if copying manually, use
+   exactly that folder name.
 2. Restart Dispatcharr (or reload plugins from the UI).
 3. Open **Plugins → PWS — Pirate Weather Station** and fill in the settings.
 4. Press **Start**.
 
 Channels are created in a group called **Weather**. A stream profile named
 `proxy` is used if one exists, otherwise the first available profile.
+
+### Upgrading from 1.4.x or earlier
+
+Releases up to 1.4.2 installed into a folder named `pws`, which didn't match
+the plugin browser's name for PWS, so **Update** always failed with "Plugin
+'pws' already exists" and the only way forward was uninstall + reinstall.
+From 1.5.0 the folder matches, so updates work in place from then on.
+
+The first update to 1.5.0 installs next to the old entry instead of replacing
+it (no uninstall needed):
+
+1. Update (or install) PWS from the plugin browser, then **enable** the new
+   entry when Dispatcharr asks.
+2. Within about 20 seconds the new plugin adopts the old one: API key, every
+   station's settings and the existing Weather channels are carried over (no
+   duplicate channels), the old stations are stopped and the old entry is
+   disabled. Stations that were running start again under the new plugin.
+3. Delete the old, now-disabled **PWS** entry from the plugin list.
+
+If you had already configured the new entry by hand before enabling it, the
+old settings are left alone and nothing is copied.
 
 ### Capabilities
 
@@ -135,7 +157,7 @@ PWS does not declare `outbound_network` — `plugin.py` itself makes no
 `requests`/`urllib`/raw-socket calls; ZIP and coordinate resolution use the
 bundled `pws/data/` lookup tables, not the network. It also does not declare
 `filesystem_write` — the only writes `plugin.py` makes, its log and
-start-lock file, stay inside the plugin's own `/data/plugins/pws/`
+start-lock file, stay inside the plugin's own `/data/plugins/pirate_weatharr_station/`
 directory, which every plugin may always write to.
 
 ### Multiple stations
@@ -324,8 +346,8 @@ Every startup logs what happened, so a silent channel is easy to diagnose from
 `pws.log`:
 
 ```
-[music] 12 track(s) from /data/plugins/pws/assets/music at 50% volume -> ...
-[music] no audio files in /data/plugins/pws/assets/music - the channel will be silent...
+[music] 12 track(s) from /data/plugins/pirate_weatharr_station/assets/music at 50% volume -> ...
+[music] no audio files in /data/plugins/pirate_weatharr_station/assets/music - the channel will be silent...
 [music] disabled (volume is 0)
 ```
 
@@ -383,7 +405,7 @@ free and do not count against your Pirate Weather quota.
 Useful for testing layout or diagnosing a start failure without Dispatcharr:
 
 ```bash
-cd /data/plugins/pws
+cd /data/plugins/pirate_weatharr_station
 export PIRATE_WEATHER_API_KEY=your_key_here
 python3 -m pws.main --zip 84101 --out file:out.ts --page-seconds 4
 ```
@@ -396,7 +418,7 @@ Other flags: `--units`, `--lat/--lon`, `--w/--h`, `--video-kbps`,
 ## Layout
 
 ```
-pws/
+pirate_weatharr_station/   (install folder; the zip's top-level folder)
 ├── plugin.py               Dispatcharr plugin: settings, start/stop, channel wiring
 ├── plugin.json             Plugin manifest (generated from plugin.py)
 ├── logo.png                Plugin/channel icon (Dispatcharr plugin list + channel logo)
@@ -480,10 +502,10 @@ Logs are written to `pws/pws.log` inside the plugin folder.
 > `NOTICE.md` and the source headers — none of which are read as plugin
 > identity — so credit and install safety do not conflict.
 >
-> Separately, the plugin's **install folder** must be named `pws` (see
-> [Install](#install)) — that name is what Dispatcharr uses to derive the
-> plugin's permanent settings/channel identity, independent of the display
-> name above.
+> Separately, the plugin's **install folder** must be named
+> `pirate_weatharr_station` (see [Install](#install)) — that name is what
+> Dispatcharr uses to derive the plugin's permanent settings/channel identity
+> and to match plugin-browser updates, independent of the display name above.
 
 | Symptom | Likely cause |
 |---|---|
@@ -493,7 +515,8 @@ Logs are written to `pws/pws.log` inside the plugin folder.
 | "port 5960/5961/5962 is already in use" | A previous renderer did not exit; press Stop, then Start |
 | "No stream profiles found" | Create a stream profile in Dispatcharr, ideally named `proxy` |
 | Channel exists but no video | Check `pws.log` for ffmpeg errors |
-| Channel is named "Station N - PWS" instead of a location | The plugin's install folder isn't named `pws` (see the naming note above), or Location Name/ZIP/Lat-Long are all blank for that station |
+| Update fails with "Plugin 'pws' already exists" | You're on 1.4.x or earlier, installed in the old `pws` folder. Install 1.5.0 from the plugin browser (it goes in alongside), enable it, then delete the old entry — see [Upgrading from 1.4.x](#upgrading-from-14x-or-earlier) |
+| Channel is named "Station N - PWS" instead of a location | Location Name, ZIP and Latitude/Longitude are all blank for that station |
 | No background music | Volume is 0, or the music folder is empty (e.g. the examples were removed) — see below. `pws.log` says exactly what was found |
 | Radar echoes float on an empty background | The OpenStreetMap backdrop could not be fetched; `pws.log` logs `[radar] base map fetch failed`. Check the host can reach `tile.openstreetmap.org` |
 | Maps are empty | Regional lookups are paused for quota, or the cities refresh has not run yet |

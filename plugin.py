@@ -100,7 +100,20 @@ _RUNTIME_FIELDS = (
 #: ``desired_running`` records that the user wants PWS on: set by Start and
 #: Restart, cleared by Stop, Reset and disabling/deleting the plugin. It is
 #: what auto-start restores after a Dispatcharr restart or plugin reload.
-_GLOBAL_RUNTIME_FIELDS = ("desired_running",)
+_GLOBAL_RUNTIME_FIELDS = ("desired_running", "migrated_from")
+
+#: Plugin keys earlier releases installed under. Up to v1.4.x the release zip's
+#: top folder was ``pws``, so Dispatcharr keyed the install ``pws``; the plugin
+#: registry lists PWS as ``pirate-weatharr-station`` and only lets an update
+#: overwrite the install whose key matches that slug (``pirate_weatharr_station``),
+#: so every registry update failed with "Plugin 'pws' already exists". Releases
+#: now ship under the matching folder, and a new install adopts the old one's
+#: settings and channels once (see Plugin._migrate_legacy_install).
+_LEGACY_PLUGIN_KEYS = ("pws",)
+
+#: Per-station runtime keys that describe a live process; never copied from a
+#: legacy install (its processes are stopped during migration).
+_PROCESS_RUNTIME_FIELDS = ("pid", "run_token", "pid_started_at", "running")
 
 def _station_field_id(idx: int, field: str) -> str:
     """
@@ -444,6 +457,10 @@ class Plugin:
     def run(self, action: str, params: Dict[str, Any],
             context: Dict[str, Any]) -> Dict[str, Any]:
         action = (action or "").lower()
+        if self._migrate_legacy_install():
+            # Settings changed underneath the caller; act on the adopted ones.
+            context = dict(context or {})
+            context["settings"] = self._fresh_settings(context.get("settings") or {})
         context = self._context_with_params(context, params)
 
         if action in {"", "status"}:
@@ -497,6 +514,10 @@ class Plugin:
     def _autostart_after_delay(self) -> None:
         time.sleep(_AUTOSTART_DELAY_SEC)
         try:
+            self._migrate_legacy_install()
+        except Exception:
+            _log.exception("PWS: migrating the previous install failed")
+        try:
             self._autostart()
         except Exception:
             _log.exception("PWS auto-start failed")
@@ -527,6 +548,84 @@ class Plugin:
         _log.info("PWS auto-start: relaunching stations %s", wanted)
         result = self._handle_start({"settings": settings, "logger": _log})
         _log.info("PWS auto-start: %s", result.get("message"))
+
+    # -- one-time migration from the old 'pws' plugin key ------------------
+
+    def _migrate_legacy_install(self) -> bool:
+        """
+        Adopt a previous install's settings, channels and running state.
+
+        Runs at most once per install (marked by ``migrated_from``), only when
+        this install has no API key of its own yet, under the start lock so
+        concurrent Dispatcharr processes can't both do it. Returns True if it
+        changed this install's settings.
+        """
+        if self._plugin_key in _LEGACY_PLUGIN_KEYS:
+            return False
+        with self._start_guard():
+            cfg = PluginConfig.objects.filter(key=self._plugin_key).first()
+            if cfg is None:
+                return False
+            mine = dict(cfg.settings or {})
+            if mine.get("migrated_from"):
+                return False
+            for old_key in _LEGACY_PLUGIN_KEYS:
+                old_cfg = PluginConfig.objects.filter(key=old_key).first()
+                if old_cfg is None:
+                    continue
+                old = dict(old_cfg.settings or {})
+                if not old or mine.get("api_key"):
+                    # Nothing to adopt, or this install was set up by hand
+                    # already: leave both alone, just don't ask again.
+                    self._persist_settings({"migrated_from": f"{old_key} (skipped)"})
+                    return False
+                return self._adopt_legacy(old_cfg, old_key, old)
+            return False
+
+    def _adopt_legacy(self, old_cfg: Any, old_key: str, old: Dict[str, Any]) -> bool:
+        was_running = False
+        old_updates: Dict[str, Any] = {}
+        old_clears: list[str] = []
+        for idx in self._station_indices():
+            pid = self._station_runtime(old, idx, "pid")
+            token = self._station_runtime(old, idx, "run_token")
+            if pid and self._is_process_running(pid, token):
+                was_running = True
+                try:
+                    self._terminate_process(pid, _log, expected_token=token)
+                except Exception:
+                    _log.exception("PWS migration: could not stop old station %s", idx)
+            for name in _PROCESS_RUNTIME_FIELDS:
+                old_clears.append(_station_runtime_key(idx, name))
+            old_updates[_station_runtime_key(idx, "running")] = False
+
+        allowed = self._allowed_setting_keys()
+        skip = {_station_runtime_key(idx, name)
+                for idx in self._station_indices() for name in _PROCESS_RUNTIME_FIELDS}
+        adopted = {k: v for k, v in old.items() if k in allowed and k not in skip}
+        adopted["desired_running"] = bool(was_running or old.get("desired_running"))
+        adopted["migrated_from"] = old_key
+        self._persist_settings(adopted)
+
+        # Retire the old install: stopped, disabled, and its record no longer
+        # pointing at processes this install now owns. Its folder is left for
+        # the user to delete from Dispatcharr's plugin list.
+        try:
+            stored = dict(old_cfg.settings or {})
+            stored.update(old_updates)
+            for key in old_clears:
+                if key not in old_updates:
+                    stored.pop(key, None)
+            old_cfg.settings = stored
+            old_cfg.enabled = False
+            old_cfg.save(update_fields=["settings", "enabled", "updated_at"])
+        except Exception:
+            _log.exception("PWS migration: could not disable the old '%s' install", old_key)
+
+        _log.info("PWS: adopted settings and channels from the previous '%s' install "
+                  "(stations were %s); the old entry is disabled and can be deleted.",
+                  old_key, "running" if was_running else "stopped")
+        return True
 
     @staticmethod
     def _truthy(raw: Any) -> bool:

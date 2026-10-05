@@ -42,14 +42,17 @@ jobs:
         if: steps.check.outputs.skip == 'false'
         run: |
           ZIP_NAME="pirate-weatharr-station-${{ steps.version.outputs.version }}.zip"
-          # Wrap everything in a top-level "pws" folder. Dispatcharr's plugin
-          # installer names the installed directory (and plugin key) after
-          # plugin.py's containing folder inside the zip, falling back to the
-          # zip's own filename only when plugin.py sits at the zip root. That
-          # fallback made the plugin key embed the version number and change
-          # on every release, orphaning the previous install's settings,
-          # channels and API key on every update.
-          rm -rf /tmp/pws-release && mkdir -p /tmp/pws-release/pws
+          # Wrap everything in one top-level folder named after the plugin
+          # registry slug with dashes as underscores. Dispatcharr derives the
+          # installed plugin key from this folder, and a registry update only
+          # overwrites the install whose key matches the sanitized slug
+          # ("pirate-weatharr-station" -> "pirate_weatharr_station"). Up to
+          # v1.4.x this folder was "pws", so every registry update failed with
+          # "Plugin 'pws' already exists" and users had to uninstall first.
+          # (A flat zip would instead take its key from the zip filename,
+          # which embeds the version and would change on every release.)
+          PLUGIN_DIR=pirate_weatharr_station
+          rm -rf /tmp/pws-release && mkdir -p "/tmp/pws-release/$PLUGIN_DIR"
           # Ship only what the plugin needs at runtime. These paths are also
           # gitignored; excluding them here keeps a stray re-add out of releases.
           rsync -a \
@@ -57,8 +60,8 @@ jobs:
             --exclude='.agents' --exclude='.codex' --exclude='.beads' \
             --exclude='.claude' --exclude='AGENTS.md' --exclude='CLAUDE.md' \
             --exclude='.gitignore' --exclude='__pycache__' \
-            ./ /tmp/pws-release/pws/
-          (cd /tmp/pws-release && zip -rq "$OLDPWD/$ZIP_NAME" pws)
+            ./ "/tmp/pws-release/$PLUGIN_DIR/"
+          (cd /tmp/pws-release && zip -rq "$OLDPWD/$ZIP_NAME" "$PLUGIN_DIR")
           echo "zip_name=$ZIP_NAME" >> "$GITHUB_ENV"
 
       - name: Create tag and release
