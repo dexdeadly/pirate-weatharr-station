@@ -266,6 +266,28 @@ _SHARED_FIELDS: list[dict[str, Any]] = [
         ),
     },
     {
+        "id": "page_order",
+        "label": "Pages and Order",
+        "type": "string",
+        "default": "current, hourly, daily, radar, regional, forecast_map, forecast_text, surf, almanac",
+        "help_text": (
+            "Pages to show, in order. Remove a name to hide that page; reorder "
+            "names to reorder pages. Names: current, hourly, daily, radar, "
+            "regional, forecast_map, forecast_text, surf, almanac. Radar needs "
+            "a radar source and Surf a surf spot. Blank shows every page."
+        ),
+    },
+    {
+        "id": "page_seconds",
+        "label": "Seconds Per Page",
+        "type": "number",
+        "default": 14,
+        "min": 6,
+        "max": 120,
+        "step": 1,
+        "help_text": "How long each page stays on screen before the next one.",
+    },
+    {
         "id": "rss_urls",
         "label": "News Ticker Feeds",
         "type": "string",
@@ -1105,6 +1127,8 @@ class Plugin:
             "location_name": str(self._station_setting(settings, idx, "location_name") or "").strip(),
             "units": settings.get("units") or "us",
             "clock": self._clock_format(settings),
+            "pages": self._page_order(settings),
+            "page_seconds": self._page_seconds(settings),
             "radar_source": settings.get("radar_source") or "noaa",
             "music_volume": round(self._music_volume(settings), 2),
             "data_interval": int(data_interval),
@@ -1327,6 +1351,26 @@ class Plugin:
         }
 
     @staticmethod
+    def _page_order(settings: Dict[str, Any]) -> str:
+        """Normalised page list for --pages (unknown names dropped)."""
+        known = ("current", "hourly", "daily", "radar", "regional",
+                 "forecast_map", "forecast_text", "surf", "almanac")
+        seen: list[str] = []
+        for token in str(settings.get("page_order") or "").replace(",", " ").split():
+            name = token.strip().lower().replace("-", "_")
+            if name in known and name not in seen:
+                seen.append(name)
+        return ",".join(seen or known)
+
+    @staticmethod
+    def _page_seconds(settings: Dict[str, Any]) -> int:
+        try:
+            value = settings.get("page_seconds")
+            return 14 if value in (None, "") else max(6, min(120, int(float(value))))
+        except (TypeError, ValueError):
+            return 14
+
+    @staticmethod
     def _clock_format(settings: Dict[str, Any]) -> str:
         value = str(settings.get("clock_format") or "auto").strip().lower()
         return value if value in ("auto", "12", "24") else "auto"
@@ -1543,6 +1587,8 @@ class Plugin:
         cmd += [
             "--units", (settings.get("units") or "us"),
             "--clock", self._clock_format(settings),
+            "--pages", self._page_order(settings),
+            "--page-seconds", str(self._page_seconds(settings)),
             "--radar-source", (settings.get("radar_source") or "noaa"),
             "--music-volume", f"{self._music_volume(settings):.2f}",
             "--data-interval-sec", str(int(data_interval)),

@@ -14,20 +14,21 @@ graphics and animated icons. See [NOTICE.md](NOTICE.md) for what is reused.
 
 ## Pages
 
-The channel cycles through eight pages (nine with a surf spot set), about 14
-seconds each:
+The channel cycles through up to nine pages, 14 seconds each by default. The
+**Pages and Order** setting chooses which pages appear and in what order (the
+names are in brackets below), and **Seconds Per Page** sets the dwell time:
 
 | Page | Contents |
 |---|---|
-| Current Conditions | Oversized temperature, condition icon, high/low labelled with the period they cover (see below), sun times, eight metric tiles |
-| 12-Hour Trend | Temperature curve with precipitation-chance and cloud-cover series |
-| 7-Day Forecast | Day cards with icons, highs/lows, a shared temperature range bar, plus precipitation, humidity, wind, gusts, cloud cover and UV per day |
-| Live Radar | Animated NEXRAD/MRMS radar from NOAA over an OpenStreetMap base, with a dBZ legend and a source credit |
-| Regional Conditions | Current temperatures at nearby cities, plotted on a map (see [Map cities](#map-cities)) |
-| Forecast Highs | Today's high at those same cities (tomorrow's after 6 pm) |
-| Extended Forecast | Narrative panels for today and tomorrow with an eight-value stat grid, feels-like, accumulation, visibility and moon phase |
-| Surf Report | Only when a surf spot is set. Estimated surf height and rating, primary/secondary swell, wind, water temperature, next tides and a 5-day wave outlook. See [Surf report](#surf-report) |
-| Almanac | Sunrise/sunset, dawn/dusk, a phase-accurate moon icon, UV, ozone, accumulations, fire index |
+| Current Conditions (`current`) | Oversized temperature, condition icon, high/low labelled with the period they cover (see below), sun times, eight metric tiles |
+| 12-Hour Trend (`hourly`) | Temperature curve with precipitation-chance and cloud-cover series |
+| 7-Day Forecast (`daily`) | Day cards with icons, highs/lows, a shared temperature range bar, plus precipitation, humidity, wind, gusts, cloud cover and UV per day |
+| Live Radar (`radar`) | Animated NEXRAD/MRMS radar from NOAA over an OpenStreetMap base, with a dBZ legend and a source credit |
+| Regional Conditions (`regional`) | Current temperatures at nearby cities, plotted on a map (see [Map cities](#map-cities)) |
+| Forecast Highs (`forecast_map`) | Today's high at those same cities (tomorrow's after 6 pm) |
+| Extended Forecast (`forecast_text`) | Narrative panels for today and tomorrow with an eight-value stat grid, feels-like, accumulation, visibility and moon phase |
+| Surf Report (`surf`) | Only when a surf spot is set. Estimated surf height and rating, primary/secondary swell, wind, water temperature, next tides and a 5-day wave outlook. See [Surf report](#surf-report) |
+| Almanac (`almanac`) | Sunrise/sunset, dawn/dusk, a phase-accurate moon icon, UV, ozone, accumulations, fire index |
 
 ### Header
 
@@ -263,6 +264,9 @@ same forecast response, so there are no fields for them.
 | Channel Number (per station) | no | Auto-assigned from 1000 when blank |
 | News Ticker Feeds | no | Comma-separated RSS/Atom URLs |
 | Auto-start Stations | no | On by default. Relaunch stations that were running after Dispatcharr restarts or the plugin updates |
+| Clock Format | no | Auto (12-hour for Imperial, 24-hour otherwise), 12-hour or 24-hour; applies to every time shown |
+| Pages and Order | no | Comma-separated page names, in order; remove a name to hide that page. Blank shows all |
+| Seconds Per Page | no | 6–120, default 14 |
 
 Frame rate is fixed at 30 fps.
 

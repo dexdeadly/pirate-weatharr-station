@@ -145,7 +145,8 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
     surf_client = (
         surf.SurfClient(cfg.surf_lat, cfg.surf_lon, units=cfg.units,
                         user_agent=cfg.user_agent)
-        if cfg.surf_lat is not None and cfg.surf_lon is not None else None
+        if cfg.surf_lat is not None and cfg.surf_lon is not None
+        and "surf" in cfg.pages else None
     )
     surf_name = cfg.surf_name or (
         f"{cfg.surf_lat:.3f}, {cfg.surf_lon:.3f}" if surf_client else ""
@@ -185,7 +186,7 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
         do the cities fall back to Pirate Weather - one quota call each, on
         the slower cfg.regional_interval_sec cadence and budget check.
         """
-        if cfg.regional_cities <= 0:
+        if cfg.regional_cities <= 0 or not ({"regional", "forecast_map"} & set(cfg.pages)):
             return
         last = float(regional_state.get("at") or 0.0)
         source = regional_state.get("source")
@@ -280,7 +281,7 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
         NOAA covers the United States only, so when it yields nothing the
         fetcher falls back to RainViewer rather than leaving the page blank.
         """
-        if cfg.radar_source == "off":
+        if cfg.radar_source == "off" or "radar" not in cfg.pages:
             return
         if radar_state["at"] and now - radar_state["at"] < 300:
             return
@@ -585,9 +586,18 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
     alert_bar.z = 200
     layers.append(alert_bar)
 
+    # Pages register here and are built afterwards in cfg.pages order, so the
+    # Page Order setting can reorder or drop any of them.
+    registered: dict[str, tuple] = {}
+
     def add_page(name: str, title: str,
                  builder: Callable[[tuple[int, int, int, int]], list[Layer]],
                  *, top: int) -> None:
+        registered[name] = (title, builder, top)
+
+    def build_page(name: str, title: str,
+                   builder: Callable[[tuple[int, int, int, int]], list[Layer]],
+                   top: int) -> None:
         bounds = content_bounds(top)
         chrome = ChromeLayer(
             width=render_w, height=render_h,
@@ -672,6 +682,15 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
                      get_rows=lambda: read("almanac_rows", []) or [],
                      min_interval=20.0, scale=scale)
     ], top=layout.CONTENT_TOP)
+
+    for name in cfg.pages:
+        if name in registered:
+            build_page(name, *registered[name])
+    if not pages and registered:
+        # Every chosen page was unavailable (e.g. only "surf" with no surf
+        # spot): fall back to the first one that exists rather than a blank.
+        first = next(iter(registered))
+        build_page(first, *registered[first])
 
     cycler = PageCycler(pages, cfg.page_duration_sec)
     if pages:

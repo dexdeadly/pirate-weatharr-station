@@ -151,6 +151,23 @@
       "help_text": "0 disables music. A few example tracks are included in the plugin's assets/music folder; add your own .mp3/.m4a/.aac/.flac/.ogg/.wav files there (or remove the examples), then restart. One is chosen at random and looped for the run. pws.log records which track was picked."
     },
     {
+      "id": "page_order",
+      "label": "Pages and Order",
+      "type": "string",
+      "default": "current, hourly, daily, radar, regional, forecast_map, forecast_text, surf, almanac",
+      "help_text": "Pages to show, in order. Remove a name to hide that page; reorder names to reorder pages. Names: current, hourly, daily, radar, regional, forecast_map, forecast_text, surf, almanac. Radar needs a radar source and Surf a surf spot. Blank shows every page."
+    },
+    {
+      "id": "page_seconds",
+      "label": "Seconds Per Page",
+      "type": "number",
+      "default": 14,
+      "min": 6,
+      "max": 120,
+      "step": 1,
+      "help_text": "How long each page stays on screen before the next one."
+    },
+    {
       "id": "rss_urls",
       "label": "News Ticker Feeds",
       "type": "string",
