@@ -186,6 +186,24 @@ existing channel rather than creating a new one.
 Disabling a station and pressing **Start** again stops just that station and
 leaves the others running. **Stop** halts all of them.
 
+### Status and data freshness
+
+The plugin's status line reports each running station's health, read from a
+small status file its renderer rewrites every refresh, for example:
+
+```
+Houston, TX (ch 1001): forecast updated 7 min ago, 7,412/10,000 API calls left this month
+```
+
+or the current problem ("API key rejected", "monthly API quota exhausted",
+DNS failures, …).
+
+On screen, the right end of the alert bar shows when the forecast last
+updated (`UPDATED 10:42 AM`). If refreshes keep failing, PWS keeps showing the
+last good forecast rather than blanking the screen, and once that's older than
+two refresh intervals (at least 15 minutes) the note turns amber:
+`DATA DELAYED · 9:12 AM`.
+
 ### Changing settings, Restart and auto-start
 
 Edit any setting and press **Start**: each running station compares what it was

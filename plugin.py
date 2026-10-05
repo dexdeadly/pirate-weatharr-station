@@ -54,6 +54,11 @@ try:
 except Exception:  # pragma: no cover - assets missing
     nearest_city = None
 
+try:
+    from .pws import status as station_status
+except Exception:  # pragma: no cover - assets missing
+    station_status = None
+
 try:  # pragma: no cover - Unix only
     import fcntl
 except Exception:  # pragma: no cover - Windows
@@ -908,12 +913,43 @@ class Plugin:
             label = (self._station_runtime(settings, idx, "location_label")
                      or fallback)
             number = self._station_runtime(settings, idx, "resolved_channel_number")
-            parts.append(f"{label} (ch {number})" if number else str(label))
+            part = f"{label} (ch {number})" if number else str(label)
+            health = self._station_health(idx)
+            parts.append(f"{part}: {health}" if health else part)
         return {
             "status": "running",
-            "message": "PWS is running: " + ", ".join(parts),
+            "message": "PWS is running. " + "; ".join(parts),
             "settings": settings,
         }
+
+    def _station_health(self, idx: int) -> str:
+        """
+        One line from the station's status file (written by its renderer each
+        refresh): forecast age or the current error, plus API quota.
+        """
+        if station_status is None:
+            return ""
+        info = station_status.read(station_status.status_path(self._base_dir, idx))
+        if not info:
+            return "starting up"
+        bits = []
+        updated = info.get("updated_at")
+        if updated:
+            age = max(0, int(time.time() - float(updated)))
+            bits.append("forecast updated " + (
+                "just now" if age < 90 else
+                f"{age // 60} min ago" if age < 5400 else
+                f"{age // 3600} h ago"))
+        error = info.get("error")
+        if error:
+            bits.append(f"problem: {error}")
+        elif not updated:
+            bits.append("waiting for first forecast")
+        remaining, limit = info.get("quota_remaining"), info.get("quota_limit")
+        if remaining is not None:
+            bits.append(f"{remaining:,}/{limit:,} API calls left this month" if limit
+                        else f"{remaining:,} API calls left this month")
+        return ", ".join(bits)
 
     def _handle_restart(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Stop every station, then start the enabled ones with current settings."""

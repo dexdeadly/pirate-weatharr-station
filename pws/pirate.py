@@ -116,6 +116,7 @@ class PirateWeatherClient:
         self._quota_reset: Optional[int] = None
         self._last_error: Optional[str] = None
         self._blocked_until = 0.0
+        self._last_success_at: Optional[float] = None
 
     # -- introspection ----------------------------------------------------
 
@@ -134,6 +135,16 @@ class PirateWeatherClient:
     def quota_limit(self) -> Optional[int]:
         with self._lock:
             return self._quota_limit
+
+    @property
+    def last_success_at(self) -> Optional[float]:
+        """When the API last answered successfully (epoch), or None.
+
+        The client serves its last good payload when a refresh fails, so this -
+        not the time the screen was redrawn - is how old the shown data is.
+        """
+        with self._lock:
+            return self._last_success_at
 
     @property
     def last_error(self) -> Optional[str]:
@@ -268,6 +279,7 @@ class PirateWeatherClient:
         with self._lock:
             self._last_error = None
             self._blocked_until = 0.0
+            self._last_success_at = time.time()
         return payload
 
     def _cached(self, lat: float, lon: float, ttl: int) -> Dict[str, Any]:

@@ -29,7 +29,7 @@ from typing import Callable, Iterable, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from pws import icons_anim, layout, logrotate, map_tiles, noaa_radar, normalize, regional, surf, theme
+from pws import icons_anim, layout, logrotate, map_tiles, noaa_radar, normalize, regional, status, surf, theme
 from pws.nws_alerts import NWSAlertPoller
 from pws.config import BASE_HEIGHT, BASE_WIDTH, Config, parse_args
 from pws.core.compositor import Compositor
@@ -355,7 +355,28 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
         radar_state["served"] = len(frames)
         return [(f["image"].copy(), f.get("label") or "") for f in frames[served:]]
 
+    station = os.environ.get("PWS_STATION_INDEX")
+    status_file = (status.status_path(Path(__file__).resolve().parents[1], station)
+                   if station else None)
+
     def fetch_all() -> dict:
+        data = _fetch_all()
+        # How old the forecast on screen is: the client keeps serving its last
+        # good payload when a refresh fails, so use its last success, not now.
+        data["updated_at"] = client.last_success_at
+        status.write(status_file, {
+            "station": station,
+            "location": cfg.location_name,
+            "updated_at": client.last_success_at,
+            "error": data.get("error") or client.last_error,
+            "quota_remaining": client.quota_remaining,
+            "quota_limit": client.quota_limit,
+            "calls_made": client.calls_made,
+            "pid": os.getpid(),
+        })
+        return data
+
+    def _fetch_all() -> dict:
         data: dict[str, object] = {}
         now = time.time()
         # The ticker is assembled live from these plus the current alerts
@@ -555,6 +576,10 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
         # With the NWS answering, alert status is known even if the forecast
         # call is failing, so only report the error when we're blind.
         get_error=lambda: None if nws_live() is not None else read("error"),
+        get_updated=lambda: read("updated_at"),
+        # Two missed refreshes (refresh interval already scales with the
+        # number of stations), never less than 15 minutes.
+        stale_after_sec=max(2 * cfg.data_interval_sec, 900),
         scale=scale,
     )
     alert_bar.z = 200
