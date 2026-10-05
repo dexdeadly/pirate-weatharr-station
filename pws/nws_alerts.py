@@ -78,7 +78,7 @@ class NWSAlertPoller:
         self._session = requests.Session()
         # NWS requires a User-Agent identifying the application.
         self._session.headers.update({
-            "User-Agent": f"{user_agent} (+{PROJECT_URL})",
+            "User-Agent": user_agent if "http" in user_agent else f"{user_agent} (+{PROJECT_URL})",
             "Accept": "application/geo+json",
         })
         self._lock = threading.Lock()

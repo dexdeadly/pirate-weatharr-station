@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import math
+import os
 import threading
 import time
 from dataclasses import dataclass
@@ -14,6 +15,8 @@ from pws.utils import fmt_time, to_local
 from io import BytesIO
 from typing import Iterable, List, Optional, Tuple
 
+from pathlib import Path
+from urllib.parse import urlparse
 import requests
 from PIL import Image
 
@@ -108,20 +111,71 @@ def _auto_zoom(lat_min: float, lon_min: float, lat_max: float, lon_max: float, w
     return 6
 
 
+#: OpenStreetMap base-map tiles are cached on disk (inside the plugin folder)
+#: for this long. OSM's tile usage policy asks clients to cache for at least
+#: seven days; before this, each station re-downloaded its map tiles every
+#: 15 minutes and on every restart. Radar tiles change every few minutes and
+#: stay memory-only.
+OSM_DISK_TTL = 14 * 24 * 3600
+_DISK_CACHE_DIR = Path(__file__).resolve().parents[1] / "cache" / "tiles"
+
+
+def _osm_disk_path(url: str) -> Optional[Path]:
+    parts = urlparse(url)
+    if parts.hostname != "tile.openstreetmap.org":
+        return None
+    z_x_y = parts.path.strip("/").split("/")
+    if len(z_x_y) != 3 or not all(p.replace(".png", "").isdigit() for p in z_x_y):
+        return None
+    return _DISK_CACHE_DIR.joinpath(*z_x_y)
+
+
+def _disk_get(path: Optional[Path]) -> Optional[bytes]:
+    if path is None:
+        return None
+    try:
+        if time.time() - path.stat().st_mtime > OSM_DISK_TTL:
+            return None
+        return path.read_bytes()
+    except OSError:
+        return None
+
+
+def _disk_put(path: Optional[Path], data: bytes) -> None:
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, path)   # atomic, so concurrent stations never see half a file
+    except OSError:
+        pass
+
+
 def _fetch_tile(url: str, headers: dict[str, str], ttl: int = 900) -> Optional[Image.Image]:
     key = ("tile", url)
     cached = _cache_get(key, ttl)
     if cached is not None:
         return cached
+    disk_path = _osm_disk_path(url)
+    data = _disk_get(disk_path)
+    if data is None:
+        try:
+            resp = requests.get(url, headers=headers, timeout=15)
+            resp.raise_for_status()
+        except Exception:
+            return None
+        data = resp.content
+        fresh = True
+    else:
+        fresh = False
     try:
-        resp = requests.get(url, headers=headers, timeout=15)
-        resp.raise_for_status()
+        img = Image.open(BytesIO(data)).convert("RGBA")
     except Exception:
         return None
-    try:
-        img = Image.open(BytesIO(resp.content)).convert("RGBA")
-    except Exception:
-        return None
+    if fresh:
+        _disk_put(disk_path, data)
     _cache_put(key, img)
     return img.copy()
 

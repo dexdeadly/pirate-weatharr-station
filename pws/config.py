@@ -116,7 +116,10 @@ def parse_args(argv: list[str] | None = None) -> Config:
     data.add_argument("--music-fifo", type=str, default=None)
     data.add_argument("--music-volume", type=float, default=0.5,
                       help="Background music gain, 0.0 silences it")
-    data.add_argument("--user-agent", type=str, default="PWS/1.0")
+    # Identifies the app (and where to reach its maintainer) to the free
+    # services it uses - OpenStreetMap and the NWS both require this.
+    data.add_argument("--user-agent", type=str,
+                      default="PWS-PirateWeatherStation (+https://github.com/dexdeadly/pirate-weatharr-station)")
 
     surf = p.add_argument_group("Surf report")
     surf.add_argument("--surf-lat", type=float, default=None,
