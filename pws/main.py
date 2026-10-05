@@ -396,16 +396,19 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
             payload = client.forecast()
             data["error"] = None
         except PirateWeatherError as exc:
+            # Only the forecast-derived pages go blank; the maps (Open-Meteo),
+            # radar, surf and alerts (NWS) come from elsewhere and carry on.
             data["error"] = str(exc)
-            return data
+            payload = None
 
-        alerts = normalize.build_alerts(payload)
-        data["alerts"] = alerts
-        data["current"] = normalize.build_current(payload, units, cfg.location_name)
-        data["daily_days"] = normalize.build_daily_days(payload, units)
-        data["forecast_periods"] = normalize.build_forecast_periods(payload, units)
-        data["hourly_points"] = normalize.build_hourly_points(payload, units, limit=12)
-        data["almanac_rows"] = normalize.build_almanac(payload, units)
+        if payload is not None:
+            alerts = normalize.build_alerts(payload)
+            data["alerts"] = alerts
+            data["current"] = normalize.build_current(payload, units, cfg.location_name)
+            data["daily_days"] = normalize.build_daily_days(payload, units)
+            data["forecast_periods"] = normalize.build_forecast_periods(payload, units)
+            data["hourly_points"] = normalize.build_hourly_points(payload, units, limit=12)
+            data["almanac_rows"] = normalize.build_almanac(payload, units)
 
         _refresh_regional(now)
         regional_points = list(regional_state.get("current") or [])
