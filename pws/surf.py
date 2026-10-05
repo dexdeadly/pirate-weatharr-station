@@ -23,7 +23,7 @@ from typing import Any, Optional
 
 import requests
 
-from pws.utils import local_tzinfo
+from pws.utils import fmt_time, local_tzinfo
 
 MARINE_URL = "https://marine-api.open-meteo.com/v1/marine"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -275,7 +275,7 @@ def _fmt_time(raw: str) -> tuple[str, Optional[datetime]]:
         dt = datetime.strptime(raw, "%Y-%m-%d %H:%M")
     except (TypeError, ValueError):
         return (raw or "--", None)
-    return (dt.strftime("%I:%M %p").lstrip("0"), dt)
+    return (fmt_time(dt), dt)
 
 
 def build_report(client: SurfClient, spot_name: str) -> dict:

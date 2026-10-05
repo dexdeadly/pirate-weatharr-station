@@ -177,6 +177,34 @@ def now_local() -> datetime:
     return datetime.now().astimezone()
 
 
+#: 24-hour clock everywhere times are shown (header clock, sun times, tides,
+#: alert end times, radar frame labels, hourly axis). Set once at startup.
+_CLOCK_24H = False
+
+
+def set_clock_24h(enabled: bool) -> None:
+    global _CLOCK_24H
+    _CLOCK_24H = bool(enabled)
+
+
+def clock_24h() -> bool:
+    return _CLOCK_24H
+
+
+def fmt_time(dt: datetime) -> str:
+    """'2:05 PM' (12-hour) or '14:05' (24-hour)."""
+    if _CLOCK_24H:
+        return dt.strftime("%H:%M")
+    return dt.strftime("%I:%M %p").lstrip("0")
+
+
+def fmt_hour(dt: datetime) -> str:
+    """Compact hour for axis labels: '2P' (12-hour) or '14' (24-hour)."""
+    if _CLOCK_24H:
+        return dt.strftime("%H")
+    return (dt.strftime("%I").lstrip("0") or "12") + dt.strftime("%p")[0]
+
+
 def to_local(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)

@@ -9,6 +9,8 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+
+from pws.utils import fmt_time, to_local
 from io import BytesIO
 from typing import Iterable, List, Optional, Tuple
 
@@ -299,7 +301,8 @@ def _compose_radar_frames_sync(
         frame_image = base_view.image.copy()
         if overlay is not None:
             frame_image.alpha_composite(overlay)
-        label = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone().strftime("%I:%M %p")
+        # Station-local time (not the server's), in the configured 12/24h format.
+        label = fmt_time(to_local(datetime.fromtimestamp(ts, tz=timezone.utc)))
         frames.append({"image": frame_image, "label": label, "timestamp": ts})
 
     return frames, base_view

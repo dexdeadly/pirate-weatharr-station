@@ -50,6 +50,27 @@
       "help_text": "Unit system used for all on-screen values."
     },
     {
+      "id": "clock_format",
+      "label": "Clock Format",
+      "type": "select",
+      "default": "auto",
+      "options": [
+        {
+          "value": "auto",
+          "label": "Auto (12-hour for Imperial, 24-hour otherwise)"
+        },
+        {
+          "value": "12",
+          "label": "12-hour (2:05 PM)"
+        },
+        {
+          "value": "24",
+          "label": "24-hour (14:05)"
+        }
+      ],
+      "help_text": "12- or 24-hour times on screen: clock, sun times, tides, alerts, radar."
+    },
+    {
       "id": "resolution",
       "label": "Resolution",
       "type": "select",

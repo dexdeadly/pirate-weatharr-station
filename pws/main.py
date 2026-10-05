@@ -53,7 +53,7 @@ from pws.layers.surf import SurfLayer
 from pws.layers.ticker import TickerLayer
 from pws.output.stream_ffmpeg import FFMPEGStreamer
 from pws.pirate import PirateWeatherClient, PirateWeatherError
-from pws.utils import compute_bounds, local_tzinfo, set_timezone
+from pws.utils import compute_bounds, local_tzinfo, set_clock_24h, set_timezone
 
 
 # ---------------------------------------------------------------------------
@@ -526,7 +526,7 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
     # Colour-coded alert status in the gap between the header band and the
     # page cards (which start at y=262), on every page.
     alert_bar = AlertBarLayer(
-        x=s(48), y=s(layout.HEADER_H + 10), w=render_w - s(96), h=s(56, 1),
+        x=s(48), y=layout.alert_bar_y(s), w=render_w - s(96), h=s(layout.ALERT_BAR_H, 1),
         get_alerts=live_alerts,
         # With the NWS answering, alert status is known even if the forecast
         # call is failing, so only report the error when we're blind.
@@ -560,19 +560,19 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
         CurrentLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                      get_data=lambda: read("current", {}) or {},
                      min_interval=5.0, scale=scale)
-    ], top=262)
+    ], top=layout.CONTENT_TOP)
 
     add_page("hourly", "12-Hour Trend", lambda b: [
         HourlyGraphLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                          get_points=lambda: read("hourly_points", []) or [],
                          min_interval=15.0, scale=scale)
-    ], top=262)
+    ], top=layout.CONTENT_TOP)
 
     add_page("daily", "7-Day Forecast", lambda b: [
         DailyLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                    get_days=lambda: read("daily_days", []) or [],
                    min_interval=30.0, scale=scale)
-    ], top=262)
+    ], top=layout.CONTENT_TOP)
 
     if cfg.radar_source != "off":
         add_page("radar", "Live Radar", lambda b: [
@@ -587,7 +587,7 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
                        )(store.get("radar_new_frames")),
                        get_source=lambda: str(read("radar_source", "") or ""),
                        frame_hold=1, scale=scale)
-        ], top=262)
+        ], top=layout.CONTENT_TOP)
 
     add_page("regional", "Regional Conditions", lambda b: [
         RegionalLayer(x=b[0], y=b[1], w=b[2], h=b[3],
@@ -595,7 +595,7 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
                       get_map=lambda: store.get("regional_map_image"),
                       get_bounds=lambda: store.get("regional_map_bounds"),
                       min_interval=20.0, scale=scale)
-    ], top=262)
+    ], top=layout.CONTENT_TOP)
 
     add_page("forecast_map", "Forecast Highs", lambda b: [
         ForecastMapLayer(x=b[0], y=b[1], w=b[2], h=b[3],
@@ -603,26 +603,26 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
                          get_map=lambda: store.get("forecast_map_image"),
                          get_bounds=lambda: store.get("forecast_map_bounds"),
                          min_interval=20.0, scale=scale)
-    ], top=262)
+    ], top=layout.CONTENT_TOP)
 
     add_page("forecast_text", "Extended Forecast", lambda b: [
         ForecastTextLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                           get_periods=lambda: read("forecast_periods", []) or [],
                           min_interval=30.0, scale=scale)
-    ], top=262)
+    ], top=layout.CONTENT_TOP)
 
     if cfg.surf_lat is not None and cfg.surf_lon is not None:
         add_page("surf", "Surf Report", lambda b: [
             SurfLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                       get_report=lambda: read("surf_report", {}) or {},
                       min_interval=20.0, scale=scale)
-        ], top=262)
+        ], top=layout.CONTENT_TOP)
 
     add_page("almanac", "Almanac", lambda b: [
         AlmanacLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                      get_rows=lambda: read("almanac_rows", []) or [],
                      min_interval=20.0, scale=scale)
-    ], top=262)
+    ], top=layout.CONTENT_TOP)
 
     cycler = PageCycler(pages, cfg.page_duration_sec)
     if pages:
@@ -783,6 +783,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"[pws] WARNING: initial fetch failed: {exc}", flush=True)
             tz_name = None
     set_timezone(tz_name, cfg.lat, cfg.lon)
+    set_clock_24h(cfg.clock_24h)
     print(f"[pws] location={cfg.location_name} "
           f"({cfg.lat:.3f},{cfg.lon:.3f}) tz={tz_name or 'system'} "
           f"units={cfg.units}", flush=True)

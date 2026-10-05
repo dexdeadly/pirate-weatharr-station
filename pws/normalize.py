@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone as dt_timezone
 from typing import Any, Iterable, Optional, Sequence
 
-from pws.utils import format_cardinal, safe_round, to_local
+from pws.utils import fmt_hour, fmt_time, format_cardinal, safe_round, to_local
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +38,7 @@ class Units:
 
 
 _UNIT_TABLE = {
-    "us": Units("us", "F", "mph", "mb", "mi", "in/hr", "in", False),
+    "us": Units("us", "F", "mph", "inHg", "mi", "in/hr", "in", False),
     "si": Units("si", "C", "m/s", "hPa", "km", "mm/hr", "cm", True),
     "ca": Units("ca", "C", "km/h", "hPa", "km", "mm/hr", "cm", True),
     "uk": Units("uk", "C", "mph", "hPa", "mi", "mm/hr", "cm", True),
@@ -86,6 +86,19 @@ def _deg_unit(value: Optional[float], units: Units) -> str:
     return f"{int(round(v))}°{units.temp}"
 
 
+def _pressure(value: Any, units: Units) -> str:
+    """
+    Sea-level pressure. Pirate Weather always reports hectopascals (= mb);
+    US viewers expect inches of mercury to two decimals (30.02 inHg).
+    """
+    v = _num(value)
+    if v is None:
+        return "--"
+    if units.pressure == "inHg":
+        return f"{v * 0.0295300:.2f} inHg"
+    return f"{v:.0f} {units.pressure}"
+
+
 def _pct(value: Optional[float]) -> str:
     """Pirate Weather expresses fractions 0-1; render as whole percentages."""
     v = _num(value)
@@ -113,11 +126,11 @@ def _local_dt(epoch: Any) -> Optional[datetime]:
         return None
 
 
-def _clock(epoch: Any, fmt: str = "%I:%M %p") -> str:
+def _clock(epoch: Any) -> str:
     dt = _local_dt(epoch)
     if not dt:
         return "--"
-    return dt.strftime(fmt).lstrip("0")
+    return fmt_time(dt)
 
 
 def until_label(epoch: Any) -> str:
@@ -125,7 +138,7 @@ def until_label(epoch: Any) -> str:
     dt = _local_dt(epoch)
     if not dt:
         return "--"
-    text = dt.strftime("%I:%M %p").lstrip("0")
+    text = fmt_time(dt)
     if dt.date() != datetime.now(dt.tzinfo).date():
         text = f"{dt.strftime('%a')} {text}"
     return text
@@ -135,8 +148,7 @@ def _hour_label(epoch: Any) -> str:
     dt = _local_dt(epoch)
     if not dt:
         return ""
-    hour = dt.strftime("%I").lstrip("0") or "12"
-    return f"{hour}{dt.strftime('%p')[0]}"
+    return fmt_hour(dt)
 
 
 def _is_daytime(icon: Any, epoch: Any = None) -> bool:
@@ -330,7 +342,7 @@ def build_current(payload: dict, units: Units, location_name: str) -> dict:
         "humidity_display": _pct(cur.get("humidity")),
         "wind_display": wind_display,
         "gust_display": _measure(gust, units.wind, 0),
-        "pressure_display": _measure(cur.get("pressure"), units.pressure, 0),
+        "pressure_display": _pressure(cur.get("pressure"), units),
         "visibility_display": _measure(cur.get("visibility"), units.distance, 1),
         "uv_display": (
             f"{_num(cur.get('uvIndex')):.0f}" if _num(cur.get("uvIndex")) is not None else "--"
@@ -341,7 +353,7 @@ def build_current(payload: dict, units: Units, location_name: str) -> dict:
         **_high_low_pair(payload, units),
         "sunrise": _clock(today.get("sunriseTime")),
         "sunset": _clock(today.get("sunsetTime")),
-        "observed_time": _clock(cur.get("time"), "%I:%M %p"),
+        "observed_time": _clock(cur.get("time")),
     }
 
 
@@ -438,7 +450,7 @@ def build_daily_days(payload: dict, units: Units, limit: int = 7) -> list[dict]:
                 "cloud_display": _pct(entry.get("cloudCover")),
                 "uv_display": "--" if uv is None else f"{uv:.0f}",
                 "dew_display": _deg_unit(entry.get("dewPoint"), units),
-                "pressure_display": _measure(entry.get("pressure"), units.pressure, 0),
+                "pressure_display": _pressure(entry.get("pressure"), units),
                 "visibility_display": _measure(entry.get("visibility"), units.distance, 1),
                 "feels_high_display": _deg(entry.get("apparentTemperatureHigh"), units),
                 "feels_low_display": _deg(entry.get("apparentTemperatureLow"), units),
@@ -498,7 +510,7 @@ def build_forecast_periods(payload: dict, units: Units, limit: int = 2) -> list[
                 "humidity": _pct(entry.get("humidity")),
                 "dew": _deg_unit(entry.get("dewPoint"), units),
                 "cloud": _pct(entry.get("cloudCover")),
-                "pressure": _measure(entry.get("pressure"), units.pressure, 0),
+                "pressure": _pressure(entry.get("pressure"), units),
                 "visibility": _measure(entry.get("visibility"), units.distance, 1),
                 "feels_high": _deg(entry.get("apparentTemperatureHigh"), units),
                 "feels_low": _deg(entry.get("apparentTemperatureLow"), units),
@@ -633,7 +645,7 @@ def build_almanac(payload: dict, units: Units) -> list[dict]:
         ("Moon Phase", moon_phase_name(today.get("moonPhase"))),
         ("Dew Point", _deg_unit(cur.get("dewPoint"), units)),
         ("Humidity", _pct(cur.get("humidity"))),
-        ("Pressure", _measure(cur.get("pressure"), units.pressure, 0)),
+        ("Pressure", _pressure(cur.get("pressure"), units)),
         ("Visibility", _measure(cur.get("visibility"), units.distance, 1)),
         ("Cloud Cover", _pct(cur.get("cloudCover"))),
         ("UV Index", (

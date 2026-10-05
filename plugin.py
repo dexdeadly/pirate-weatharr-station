@@ -146,6 +146,12 @@ _RADAR_SOURCES = [
     {"value": "off", "label": "Off (hide the radar page)"},
 ]
 
+_CLOCK_FORMATS = [
+    {"value": "auto", "label": "Auto (12-hour for Imperial, 24-hour otherwise)"},
+    {"value": "12", "label": "12-hour (2:05 PM)"},
+    {"value": "24", "label": "24-hour (14:05)"},
+]
+
 _UNITS = [
     {"value": "us", "label": "Imperial (°F, mph, mi)"},
     {"value": "ca", "label": "Metric (°C, km/h, km)"},
@@ -181,6 +187,14 @@ _SHARED_FIELDS: list[dict[str, Any]] = [
         "default": "us",
         "options": _UNITS,
         "help_text": "Unit system used for all on-screen values.",
+    },
+    {
+        "id": "clock_format",
+        "label": "Clock Format",
+        "type": "select",
+        "default": "auto",
+        "options": _CLOCK_FORMATS,
+        "help_text": "12- or 24-hour times on screen: clock, sun times, tides, alerts, radar.",
     },
     {
         "id": "resolution",
@@ -1053,6 +1067,7 @@ class Plugin:
             "coords": list(coords) if coords else None,
             "location_name": str(self._station_setting(settings, idx, "location_name") or "").strip(),
             "units": settings.get("units") or "us",
+            "clock": self._clock_format(settings),
             "radar_source": settings.get("radar_source") or "noaa",
             "music_volume": round(self._music_volume(settings), 2),
             "data_interval": int(data_interval),
@@ -1275,6 +1290,11 @@ class Plugin:
         }
 
     @staticmethod
+    def _clock_format(settings: Dict[str, Any]) -> str:
+        value = str(settings.get("clock_format") or "auto").strip().lower()
+        return value if value in ("auto", "12", "24") else "auto"
+
+    @staticmethod
     def _music_volume(settings: Dict[str, Any]) -> float:
         """UI percentage (0-100) to an ffmpeg gain (0.0-1.0)."""
         try:
@@ -1486,6 +1506,7 @@ class Plugin:
             cmd += ["--lat", f"{coords[0]:.6f}", "--lon", f"{coords[1]:.6f}"]
         cmd += [
             "--units", (settings.get("units") or "us"),
+            "--clock", self._clock_format(settings),
             "--radar-source", (settings.get("radar_source") or "noaa"),
             "--music-volume", f"{self._music_volume(settings):.2f}",
             "--data-interval-sec", str(int(data_interval)),

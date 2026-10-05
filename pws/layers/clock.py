@@ -9,7 +9,7 @@ from PIL import ImageDraw
 
 from pws import layout, theme
 from pws.core.layer import Layer
-from pws.utils import now_local
+from pws.utils import clock_24h, now_local
 
 
 class ClockLayer(Layer):
@@ -38,9 +38,11 @@ class ClockLayer(Layer):
 
     def tick(self, now: float):
         dt = now_local()
-        time_str = dt.strftime("%I:%M").lstrip("0")
+        if clock_24h():
+            time_str, ampm = dt.strftime("%H:%M"), ""
+        else:
+            time_str, ampm = dt.strftime("%I:%M").lstrip("0"), dt.strftime("%p")
         secs_str = dt.strftime("%S")
-        ampm = dt.strftime("%p")
         date_str = dt.strftime("%A, %B %d").replace(" 0", " ")
 
         state = (time_str, secs_str, ampm, date_str)
@@ -76,7 +78,8 @@ class ClockLayer(Layer):
 
         draw.text((x0, body_y - self.s(4)), time_str, font=time_font, fill=theme.TEXT)
         sx = x0 + time_w + self.s(10)
-        draw.text((sx, body_y + self.s(2)), ampm, font=small_font, fill=theme.ACCENT)
+        if ampm:
+            draw.text((sx, body_y + self.s(2)), ampm, font=small_font, fill=theme.ACCENT)
         draw.text((sx, body_y + self.s(30)), secs_str, font=small_font,
                   fill=theme.TEXT_DIM)
 

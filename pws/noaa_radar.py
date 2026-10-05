@@ -25,6 +25,8 @@ from __future__ import annotations
 import math
 import time
 from datetime import datetime, timezone as dt_timezone
+
+from pws.utils import fmt_time
 from io import BytesIO
 from typing import List, Optional, Tuple
 from urllib.parse import urlparse
@@ -187,7 +189,7 @@ def fetch_frames(
                 pass
         out.append({
             "image": img,
-            "label": stamp.strftime("%I:%M %p").lstrip("0"),
+            "label": fmt_time(stamp),
             "timestamp": end_ms // 1000,
             "coverage": _coverage(img),
         })

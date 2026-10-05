@@ -42,6 +42,7 @@ class Config:
     # UI
     ticker_speed_px_per_sec: int
     page_duration_sec: int
+    clock_24h: bool
     timezone: str | None
     music_dir: str | None
     music_fifo: str | None
@@ -107,6 +108,8 @@ def parse_args(argv: list[str] | None = None) -> Config:
     data.add_argument("--ticker-speed", dest="ticker_speed_px_per_sec",
                       type=int, default=120)
     data.add_argument("--page-seconds", dest="page_duration_sec", type=int, default=14)
+    data.add_argument("--clock", choices=("auto", "12", "24"), default="auto",
+                      help="12- or 24-hour times; auto = 12h for 'us' units, else 24h")
     data.add_argument("--tz", "--timezone", dest="timezone", type=str, default=None,
                       help="IANA timezone; auto-detected from the API when omitted")
     data.add_argument("--music-dir", type=str, default=None)
@@ -148,6 +151,7 @@ def parse_args(argv: list[str] | None = None) -> Config:
         radar_source=args.radar_source,
         ticker_speed_px_per_sec=max(10, args.ticker_speed_px_per_sec),
         page_duration_sec=max(4, args.page_duration_sec),
+        clock_24h=(args.clock == "24") or (args.clock == "auto" and args.units != "us"),
         timezone=args.timezone,
         music_dir=args.music_dir or _default_music_dir(),
         music_fifo=args.music_fifo,

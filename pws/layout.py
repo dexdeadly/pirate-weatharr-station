@@ -15,6 +15,24 @@ from typing import Callable
 #: Header band height in design units (1920x1080 reference).
 HEADER_H = 176
 
+#: Top of the page content cards, and the alert bar that sits in the gap
+#: between the header and them.
+CONTENT_TOP = 262
+ALERT_BAR_H = 56
+
+
+def alert_bar_y(s: Callable[..., int]) -> int:
+    """
+    Top of the alert bar, centred in the header-to-content gap.
+
+    Worked out in output pixels (after scaling) so both gaps stay equal - to
+    within one pixel of rounding - at every resolution, and stay equal if any
+    of the three measurements changes.
+    """
+    header = s(HEADER_H)
+    gap = s(CONTENT_TOP) - header - s(ALERT_BAR_H, 1)
+    return header + max(0, gap) // 2
+
 #: Vertical rhythm shared by every column.
 LABEL_Y = 40      # small caps column label
 BODY_Y = 66       # start of the column's main content
