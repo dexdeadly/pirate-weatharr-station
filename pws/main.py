@@ -29,7 +29,7 @@ from typing import Callable, Iterable, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from pws import icons_anim, layout, logrotate, map_tiles, noaa_radar, normalize, surf, theme
+from pws import icons_anim, layout, logrotate, map_tiles, noaa_radar, normalize, regional, surf, theme
 from pws.nws_alerts import NWSAlertPoller
 from pws.config import BASE_HEIGHT, BASE_WIDTH, Config, parse_args
 from pws.core.compositor import Compositor
@@ -53,7 +53,7 @@ from pws.layers.surf import SurfLayer
 from pws.layers.ticker import TickerLayer
 from pws.output.stream_ffmpeg import FFMPEGStreamer
 from pws.pirate import PirateWeatherClient, PirateWeatherError
-from pws.utils import compute_bounds, local_tzinfo, set_clock_24h, set_timezone
+from pws.utils import compute_bounds, local_tzinfo, now_local, set_clock_24h, set_timezone
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +128,10 @@ class _RssTitleCache:
 # Data pipeline
 # ---------------------------------------------------------------------------
 
+#: Map-city refresh when Open-Meteo is supplying them (free, no quota).
+REGIONAL_OPEN_METEO_SEC = 1800
+
+
 def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
                     render_w: int, render_h: int, scale: float) -> DataStore:
     """
@@ -173,13 +177,20 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
         return None, bounds
 
     def _refresh_regional(now: float) -> None:
-        """Slow-cadence secondary lookups for the two map pages."""
+        """
+        Map-city weather for the two map pages.
+
+        Open-Meteo answers for every city in one free request, so it's tried
+        first and refreshed every REGIONAL_OPEN_METEO_SEC. Only if that fails
+        do the cities fall back to Pirate Weather - one quota call each, on
+        the slower cfg.regional_interval_sec cadence and budget check.
+        """
         if cfg.regional_cities <= 0:
             return
         last = float(regional_state.get("at") or 0.0)
-        if last and now - last < cfg.regional_interval_sec:
-            return
-        if not client.budget_ok_for_secondary():
+        source = regional_state.get("source")
+        interval = REGIONAL_OPEN_METEO_SEC if source == "open-meteo" else cfg.regional_interval_sec
+        if last and now - last < interval:
             return
 
         # Spread-out cities around the station, never the station's own area
@@ -187,6 +198,18 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
         targets = major_cities_near(
             lat, lon, max_results=cfg.regional_cities, home_name=cfg.location_name
         )
+        # Forecast Highs shows today's high until 6 pm, then tomorrow's -
+        # the same switch the Current Conditions high/low makes.
+        forecast_day = 1 if now_local().hour >= normalize.EVENING_HOUR else 0
+        fetched = regional.fetch(targets, units, cfg.user_agent, forecast_day=forecast_day)
+        if fetched is not None and (fetched[0] or fetched[1]):
+            regional_state["current"], regional_state["forecast"] = fetched
+            regional_state["at"] = now
+            regional_state["source"] = "open-meteo"
+            return
+
+        if not client.budget_ok_for_secondary():
+            return
         current_points: list[dict] = []
         forecast_points: list[dict] = []
         for target in targets:
@@ -208,6 +231,7 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
             regional_state["current"] = current_points
             regional_state["forecast"] = forecast_points
             regional_state["at"] = now
+            regional_state["source"] = "pirate"
 
     radar_state.update({"source": None, "frames": [], "at": 0.0, "served": 0,
                         "base": None, "base_key": None})

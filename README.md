@@ -24,7 +24,7 @@ seconds each:
 | 7-Day Forecast | Day cards with icons, highs/lows, a shared temperature range bar, plus precipitation, humidity, wind, gusts, cloud cover and UV per day |
 | Live Radar | Animated NEXRAD/MRMS radar from NOAA over an OpenStreetMap base, with a dBZ legend and a source credit |
 | Regional Conditions | Current temperatures at nearby cities, plotted on a map (see [Map cities](#map-cities)) |
-| Forecast Highs | Tomorrow's highs at those same cities |
+| Forecast Highs | Today's high at those same cities (tomorrow's after 6 pm) |
 | Extended Forecast | Narrative panels for today and tomorrow with an eight-value stat grid, feels-like, accumulation, visibility and moon phase |
 | Surf Report | Only when a surf spot is set. Estimated surf height and rating, primary/secondary swell, wind, water temperature, next tides and a 5-day wave outlook. See [Surf report](#surf-report) |
 | Almanac | Sunrise/sunset, dawn/dusk, a phase-accurate moon icon, UV, ozone, accumulations, fire index |
@@ -270,8 +270,11 @@ people, worldwide):
 - **Search 200 miles first,** widening to 360 only if too few cities fit, and
   falling back to the nearest places at any distance in very remote spots.
 
-Each city costs one Pirate Weather call per regional refresh (every 90 minutes
-for one station), and lookups pause when the monthly quota runs low.
+The cities' weather comes from [Open-Meteo](https://open-meteo.com/) — free,
+no key, one request for all of them — every 30 minutes, so the map pages cost
+nothing against your Pirate Weather quota. Only if Open-Meteo can't be reached
+do they fall back to Pirate Weather (one call per city, on the slower regional
+cadence below, paused when the monthly quota runs low).
 
 ## Radar
 
@@ -366,9 +369,12 @@ setting (default 10 minutes, the per-station baseline at one station):
 - **Primary location** — one call every interval, roughly **4,300/month** at
   the 10-minute default. A single call returns current conditions, hourly,
   daily and alerts, so every page is fed from it.
-- **Regional cities** — six cities refreshed every 9x the interval (90 min at
-  the default), roughly **2,900/month**. These drive only the two map pages.
-- **Total** — about **7,200/month** at the default, leaving headroom.
+- **Regional cities** — normally free: they come from Open-Meteo (see
+  [Map cities](#map-cities)). Only as a fallback, if Open-Meteo is
+  unreachable, are they fetched from Pirate Weather: six cities every 9x the
+  interval (90 min at the default), up to **2,900/month** while it lasts.
+- **Total** — about **4,300/month** at the default (at most ~7,200 during an
+  Open-Meteo outage), leaving plenty of headroom.
 
 **Running several stations does not multiply this.** Each station polls
 independently, so three at the single-station cadence would cost ~21,600
@@ -376,11 +382,11 @@ calls/month — more than twice the free tier. PWS therefore scales the refresh
 intervals by the number of enabled stations, holding the total flat regardless
 of the interval you choose:
 
-| Stations | Forecast refresh | Regional refresh | Monthly calls |
+| Stations | Forecast refresh | Regional fallback refresh | Monthly calls |
 |---|---|---|---|
-| 1 | 10 min | 90 min | ~7,200 |
-| 2 | 20 min | 180 min | ~7,200 |
-| 3 | 30 min | 270 min | ~7,200 |
+| 1 | 10 min | 90 min | ~4,300 (≤ 7,200) |
+| 2 | 20 min | 180 min | ~4,300 (≤ 7,200) |
+| 3 | 30 min | 270 min | ~4,300 (≤ 7,200) |
 
 The setting has a 5-minute floor - the lowest per-station baseline that still
 keeps 3 stations under the free tier - and a 60-minute ceiling. Forecast data
@@ -395,8 +401,9 @@ On top of the budget, the client:
 - backs off for an hour on HTTP 429 rather than hammering the gateway;
 - serves the last good payload if a refresh fails, so the screen never blanks.
 
-Radar and base map imagery come from RainViewer and OpenStreetMap, which are
-free and do not count against your Pirate Weather quota.
+Radar and base map imagery (NOAA, RainViewer, OpenStreetMap), map-city weather
+(Open-Meteo), alerts (NWS) and the surf page are all free and do not count
+against your Pirate Weather quota.
 
 ---
 
@@ -520,9 +527,9 @@ even while the station keeps running, keeping one previous file
 | Channel exists but no video | Check the station's log (`pws_station<N>.log`) for ffmpeg errors |
 | Update fails with "Plugin 'pws' already exists" | You're on 1.4.x or earlier, installed in the old `pws` folder. Install 1.5.0 from the plugin browser (it goes in alongside), enable it, then delete the old entry — see [Upgrading from 1.4.x](#upgrading-from-14x-or-earlier) |
 | Channel is named "Station N - PWS" instead of a location | Location Name, ZIP and Latitude/Longitude are all blank for that station |
-| No background music | Volume is 0, or the music folder is empty (e.g. the examples were removed) — see below. the station's log (`pws_station<N>.log`) says exactly what was found |
+| No background music | Volume is 0, or the music folder is empty (e.g. the examples were removed) — see below. The station's log (`pws_station<N>.log`) says exactly what was found |
 | Radar echoes float on an empty background | The OpenStreetMap backdrop could not be fetched; the station's log (`pws_station<N>.log`) logs `[radar] base map fetch failed`. Check the host can reach `tile.openstreetmap.org` |
-| Maps are empty | Regional lookups are paused for quota, or the cities refresh has not run yet |
+| Maps are empty | Open-Meteo is unreachable and the Pirate Weather fallback is paused for quota, or the first cities refresh hasn't run yet |
 
 ---
 
