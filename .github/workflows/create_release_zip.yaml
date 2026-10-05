@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Read version from plugin.json
         id: version
@@ -60,6 +60,7 @@ jobs:
             --exclude='.agents' --exclude='.codex' --exclude='.beads' \
             --exclude='.claude' --exclude='AGENTS.md' --exclude='CLAUDE.md' \
             --exclude='.gitignore' --exclude='__pycache__' \
+            --exclude='tests' --exclude='requirements-dev.txt' \
             ./ "/tmp/pws-release/$PLUGIN_DIR/"
           (cd /tmp/pws-release && zip -rq "$OLDPWD/$ZIP_NAME" "$PLUGIN_DIR")
           echo "zip_name=$ZIP_NAME" >> "$GITHUB_ENV"

@@ -444,6 +444,20 @@ Other flags: `--units`, `--lat/--lon`, `--w/--h`, `--video-kbps`,
 
 ---
 
+## Tests
+
+```
+pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+The suite runs fully offline (Dispatcharr is stubbed, HTTP is mocked) and
+covers the data normalisation, alert tiers, map-city picking, frame pacing,
+the plugin's start/restart/auto-start lifecycle and the migration from the
+old `pws` install, plus checks that `plugin.json` matches `plugin.py` and that
+the release zip's folder matches the plugin-browser key. GitHub Actions runs
+it on every push and pull request (`.github/workflows/tests.yml`).
+
 ## Layout
 
 ```

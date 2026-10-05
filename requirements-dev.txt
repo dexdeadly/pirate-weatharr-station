@@ -1,0 +1,6 @@
+# Test dependencies (the plugin itself runs inside Dispatcharr's environment,
+# which already provides these runtime libraries).
+pillow
+numpy
+requests
+pytest
