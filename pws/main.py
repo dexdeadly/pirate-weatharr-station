@@ -29,7 +29,7 @@ from typing import Callable, Iterable, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from pws import icons_anim, layout, map_tiles, noaa_radar, normalize, surf, theme
+from pws import icons_anim, layout, logrotate, map_tiles, noaa_radar, normalize, surf, theme
 from pws.nws_alerts import NWSAlertPoller
 from pws.config import BASE_HEIGHT, BASE_WIDTH, Config, parse_args
 from pws.core.compositor import Compositor
@@ -674,7 +674,7 @@ def _build_music_playlist(cfg: Config) -> str | None:
 
     Returns ``None`` when music is disabled or no audio files are present, in
     which case the stream carries a silent audio track. Every outcome is logged
-    so a silent channel can be diagnosed from pws.log alone.
+    so a silent channel can be diagnosed from the station's log alone.
     """
     if cfg.music_volume <= 0.0:
         print("[music] disabled (volume is 0)", flush=True)
@@ -735,6 +735,7 @@ def _build_music_playlist(cfg: Config) -> str | None:
 
 def main(argv: Optional[list[str]] = None) -> int:
     cfg = parse_args(argv)
+    logrotate.start(os.environ.get("PWS_LOG_PATH"))
 
     if not cfg.api_key:
         print("[pws] FATAL: no API key. Pass --api-key or set "

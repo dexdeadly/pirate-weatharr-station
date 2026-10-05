@@ -439,7 +439,8 @@ class Plugin:
     def __init__(self) -> None:
         self._base_dir = Path(__file__).resolve().parent
         self._plugin_key = self._base_dir.name.replace(" ", "_").lower()
-        self._log_path = self._base_dir / "pws.log"
+        # Each station logs to its own file (pws_station1.log, ...); the
+        # renderer rotates it by size while running (pws/logrotate.py).
         self._log_max_bytes = 5 * 1024 * 1024
         self._start_lock_path = self._base_dir / ".start.lock"
 
@@ -1482,14 +1483,13 @@ class Plugin:
                 return resolved
         raise RuntimeError("Unable to locate a Python interpreter for PWS")
 
-    def _rotate_log_if_needed(self) -> None:
+    def _station_log_path(self, idx: int) -> Path:
+        return self._base_dir / f"pws_station{idx}.log"
+
+    def _rotate_log_if_needed(self, path: Path) -> None:
         try:
-            if self._log_path.exists() and \
-                    self._log_path.stat().st_size > self._log_max_bytes:
-                backup = self._log_path.with_suffix(self._log_path.suffix + ".1")
-                if backup.exists():
-                    backup.unlink()
-                self._log_path.rename(backup)
+            if path.exists() and path.stat().st_size > self._log_max_bytes:
+                os.replace(path, path.with_name(path.name + ".1"))
         except Exception:
             pass
 
@@ -1556,14 +1556,16 @@ class Plugin:
             else f"{coords[0]:.4f},{coords[1]:.4f}" if coords
             else "unknown location"
         )
-        self._log_path.parent.mkdir(parents=True, exist_ok=True)
-        self._rotate_log_if_needed()
+        log_path = self._station_log_path(idx)
+        env["PWS_LOG_PATH"] = str(log_path)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._rotate_log_if_needed(log_path)
         header = (f"\n--- [{datetime.now().isoformat()}] Starting PWS station "
                   f"{idx} for {location_desc} ---\n")
-        with open(self._log_path, "ab") as fh:
+        with open(log_path, "ab") as fh:
             fh.write(header.encode("utf-8"))
 
-        log_handle = open(self._log_path, "ab", buffering=0)
+        log_handle = open(log_path, "ab", buffering=0)
         popen_kwargs: Dict[str, Any] = {
             "cwd": str(self._base_dir),
             "stdout": log_handle,

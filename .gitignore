@@ -13,6 +13,8 @@ env/
 
 # Runtime artifacts (written next to plugin.py when the plugin runs)
 pws.log
+pws_station*.log
+pws_station*.log.1
 .start.lock
 
 # Claude Code local settings (permission approvals, session state)

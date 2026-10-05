@@ -343,7 +343,7 @@ track — the channel is valid and plays, there is simply nothing on the music
 bed. Credits for the included tracks are in `NOTICE.md`.
 
 Every startup logs what happened, so a silent channel is easy to diagnose from
-`pws.log`:
+the station's log (`pws_station<N>.log`):
 
 ```
 [music] 12 track(s) from /data/plugins/pirate_weatharr_station/assets/music at 50% volume -> ...
@@ -492,7 +492,10 @@ pirate_weatharr_station/   (install folder; the zip's top-level folder)
 
 ## Troubleshooting
 
-Logs are written to `pws/pws.log` inside the plugin folder.
+Each station logs to its own file in the plugin folder — `pws_station1.log`,
+`pws_station2.log`, `pws_station3.log`. A log is rotated once it passes 5 MB,
+even while the station keeps running, keeping one previous file
+(`pws_station1.log.1`).
 
 > **Note on naming.** The plugin identifies itself as `PWS - Pirate Weather
 > Station`. That string is deliberately kept clear of the upstream project's
@@ -514,11 +517,11 @@ Logs are written to `pws/pws.log` inside the plugin folder.
 | "monthly API quota exhausted" | Free tier used up; it resets monthly |
 | "port 5960/5961/5962 is already in use" | A previous renderer did not exit; press Stop, then Start |
 | "No stream profiles found" | Create a stream profile in Dispatcharr, ideally named `proxy` |
-| Channel exists but no video | Check `pws.log` for ffmpeg errors |
+| Channel exists but no video | Check the station's log (`pws_station<N>.log`) for ffmpeg errors |
 | Update fails with "Plugin 'pws' already exists" | You're on 1.4.x or earlier, installed in the old `pws` folder. Install 1.5.0 from the plugin browser (it goes in alongside), enable it, then delete the old entry — see [Upgrading from 1.4.x](#upgrading-from-14x-or-earlier) |
 | Channel is named "Station N - PWS" instead of a location | Location Name, ZIP and Latitude/Longitude are all blank for that station |
-| No background music | Volume is 0, or the music folder is empty (e.g. the examples were removed) — see below. `pws.log` says exactly what was found |
-| Radar echoes float on an empty background | The OpenStreetMap backdrop could not be fetched; `pws.log` logs `[radar] base map fetch failed`. Check the host can reach `tile.openstreetmap.org` |
+| No background music | Volume is 0, or the music folder is empty (e.g. the examples were removed) — see below. the station's log (`pws_station<N>.log`) says exactly what was found |
+| Radar echoes float on an empty background | The OpenStreetMap backdrop could not be fetched; the station's log (`pws_station<N>.log`) logs `[radar] base map fetch failed`. Check the host can reach `tile.openstreetmap.org` |
 | Maps are empty | Regional lookups are paused for quota, or the cities refresh has not run yet |
 
 ---
