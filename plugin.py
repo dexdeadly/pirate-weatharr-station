@@ -404,7 +404,7 @@ def _build_fields() -> list[dict[str, Any]]:
 
 class Plugin:
     name = "PWS - Pirate Weather Station"
-    version = "1.5.0"
+    version = "1.5.1"
     description = (
         "TV-style weather channels powered by the Pirate Weather API. Runs up "
         "to three stations, each with its own location and Dispatcharr channel."

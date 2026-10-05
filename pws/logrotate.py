@@ -35,7 +35,8 @@ def rotate_if_needed(path: Path, max_bytes: int = MAX_BYTES) -> bool:
         pass
     try:
         os.replace(path, path.with_name(path.name + ".1"))
-        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        # Owner-only: logs can include locations and service errors.
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     except OSError:
         return False
     try:
