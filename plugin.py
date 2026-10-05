@@ -1746,13 +1746,24 @@ class Plugin:
 
     def _pid_matches_token(self, pid: int, expected_token: str) -> bool:
         """Guard against acting on a recycled PID."""
-        token = self._read_proc_env_token(pid)
-        if token:
-            return token == expected_token
-        cmdline = self._read_proc_cmdline(pid)
-        if cmdline:
-            # Fall back to a shape check when /proc/<pid>/environ is unreadable.
-            return "pws.main" in cmdline and "--out" in cmdline
+        # Right after launch the renderer can still be between fork and exec:
+        # for that instant /proc/<pid> shows *this* process's environ and
+        # cmdline (no run token, not pws.main), or nothing at all. Start's own
+        # status check can land there; reading it as "someone else's process"
+        # used to drop the PID of a renderer that was in fact starting,
+        # orphaning it. While it still looks like our own fork, retry briefly.
+        own_cmdline = self._read_proc_cmdline(os.getpid())
+        for _attempt in range(50):
+            token = self._read_proc_env_token(pid)
+            if token:
+                return token == expected_token
+            cmdline = self._read_proc_cmdline(pid)
+            if cmdline and cmdline != own_cmdline:
+                # Fall back to a shape check when /proc/<pid>/environ is unreadable.
+                return "pws.main" in cmdline and "--out" in cmdline
+            if not os.path.exists(f"/proc/{pid}"):
+                return False
+            time.sleep(0.01)
         return False
 
     def _read_proc_env_token(self, pid: int) -> Optional[str]:
