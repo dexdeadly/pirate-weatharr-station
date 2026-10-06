@@ -25,13 +25,15 @@ import xml.etree.ElementTree as ET
 
 from PIL import Image
 from pathlib import Path
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, Optional, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from pws import icons_anim, layout, logrotate, map_tiles, noaa_radar, normalize, regional, status, surf, theme
 from pws.nws_alerts import NWSAlertPoller
-from pws.config import BASE_HEIGHT, BASE_WIDTH, Config, parse_args
+from dataclasses import dataclass
+
+from pws.config import BASE_HEIGHT, BASE_WIDTH, Config, Location, parse_args
 from pws.core.compositor import Compositor
 from pws.core.datastore import DataStore
 from pws.core.layer import Layer
@@ -53,7 +55,8 @@ from pws.layers.surf import SurfLayer
 from pws.layers.ticker import TickerLayer
 from pws.output.stream_ffmpeg import FFMPEGStreamer
 from pws.pirate import PirateWeatherClient, PirateWeatherError
-from pws.utils import compute_bounds, local_tzinfo, now_local, set_clock_24h, set_timezone
+from pws.utils import (compute_bounds, local_tzinfo, now_local, resolve_timezone,
+                       set_active_timezone, set_clock_24h, set_thread_timezone)
 
 
 # ---------------------------------------------------------------------------
@@ -132,8 +135,20 @@ class _RssTitleCache:
 REGIONAL_OPEN_METEO_SEC = 1800
 
 
-def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
-                    render_w: int, render_h: int, scale: float) -> DataStore:
+@dataclass
+class LocationContext:
+    """Everything one location on this channel needs: its own forecast client,
+    timezone, NWS alert poller and background data store."""
+    loc: Location
+    client: PirateWeatherClient
+    tz: object = None
+    store: Optional[DataStore] = None
+    poller: Optional[NWSAlertPoller] = None
+
+
+def _make_datastore(cfg: Config, loc: Location, client: PirateWeatherClient, units,
+                    render_w: int, render_h: int, scale: float, tz=None,
+                    board: Optional[status.StatusBoard] = None) -> DataStore:
     """
     Background refresh thread.
 
@@ -143,14 +158,15 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
     """
     lat, lon = client.lat, client.lon
     surf_client = (
-        surf.SurfClient(cfg.surf_lat, cfg.surf_lon, units=cfg.units,
+        surf.SurfClient(loc.surf_lat, loc.surf_lon, units=cfg.units,
                         user_agent=cfg.user_agent)
-        if cfg.surf_lat is not None and cfg.surf_lon is not None
-        and "surf" in cfg.pages else None
+        if loc.has_surf and "surf" in cfg.pages else None
     )
-    surf_name = cfg.surf_name or (
-        f"{cfg.surf_lat:.3f}, {cfg.surf_lon:.3f}" if surf_client else ""
+    surf_name = loc.surf_name or (
+        f"{loc.surf_lat:.3f}, {loc.surf_lon:.3f}" if surf_client else ""
     )
+    # RainViewer frames are cached per location (a channel can show several).
+    rainviewer = map_tiles.RadarFrameManager()
     rss = _RssTitleCache(cfg.rss_urls, cfg.rss_refresh_sec, cfg.rss_max_items)
     radar_state: dict[str, float] = {"last_ts": 0.0}
     regional_state: dict[str, object] = {"at": 0.0, "current": [], "forecast": []}
@@ -197,7 +213,7 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
         # Spread-out cities around the station, never the station's own area
         # (see pws/data/major_cities.py for how they're chosen).
         targets = major_cities_near(
-            lat, lon, max_results=cfg.regional_cities, home_name=cfg.location_name
+            lat, lon, max_results=cfg.regional_cities, home_name=loc.name
         )
         # Forecast Highs shows today's high until 6 pm, then tomorrow's -
         # the same switch the Current Conditions high/low makes.
@@ -322,12 +338,12 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
 
         if not got and cfg.radar_source in ("rainviewer", "auto", "noaa"):
             try:
-                map_tiles.ensure_radar_frames(
-                    announce=False, center_lat=lat, center_lon=lon,
+                rainviewer.ensure_fetch(
+                    center_lat=lat, center_lon=lon,
                     width=width, height=height, user_agent=cfg.user_agent,
                     span_degrees=3.0, max_frames=6,
                 )
-                cached = map_tiles.get_cached_radar_frames() or []
+                cached = rainviewer.get_frames() or []
                 got = [
                     {"image": f["image"], "label": f.get("label") or "",
                      "timestamp": f.get("timestamp") or 0, "coverage": 1.0}
@@ -356,25 +372,23 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
         radar_state["served"] = len(frames)
         return [(f["image"].copy(), f.get("label") or "") for f in frames[served:]]
 
-    station = os.environ.get("PWS_STATION_INDEX")
-    status_file = (status.status_path(Path(__file__).resolve().parents[1], station)
-                   if station else None)
-
     def fetch_all() -> dict:
+        # Normalisation formats times in this location's timezone, whichever
+        # location happens to be on screen.
+        set_thread_timezone(tz)
         data = _fetch_all()
         # How old the forecast on screen is: the client keeps serving its last
         # good payload when a refresh fails, so use its last success, not now.
         data["updated_at"] = client.last_success_at
-        status.write(status_file, {
-            "station": station,
-            "location": cfg.location_name,
-            "updated_at": client.last_success_at,
-            "error": data.get("error") or client.last_error,
-            "quota_remaining": client.quota_remaining,
-            "quota_limit": client.quota_limit,
-            "calls_made": client.calls_made,
-            "pid": os.getpid(),
-        })
+        if board is not None:
+            board.update(loc.name, {
+                "updated_at": client.last_success_at,
+                "error": data.get("error") or client.last_error,
+                "quota_remaining": client.quota_remaining,
+                "quota_limit": client.quota_limit,
+                "calls_made": client.calls_made,
+                "pid": os.getpid(),
+            })
         return data
 
     def _fetch_all() -> dict:
@@ -404,7 +418,7 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
         if payload is not None:
             alerts = normalize.build_alerts(payload)
             data["alerts"] = alerts
-            data["current"] = normalize.build_current(payload, units, cfg.location_name)
+            data["current"] = normalize.build_current(payload, units, loc.name)
             data["daily_days"] = normalize.build_daily_days(payload, units)
             data["forecast_periods"] = normalize.build_forecast_periods(payload, units)
             data["hourly_points"] = normalize.build_hourly_points(payload, units, limit=12)
@@ -442,27 +456,56 @@ def _make_datastore(cfg: Config, client: PirateWeatherClient, units,
 # ---------------------------------------------------------------------------
 
 class PageCycler:
-    """Toggles layer-group visibility on a fixed cadence."""
+    """
+    Steps through the page sequence on a fixed cadence.
 
-    def __init__(self, pages: list[dict], interval_sec: float):
+    Each entry is one page for one location. A channel that shows several
+    locations runs a full set of pages for the first, then the next, and so
+    on: page layers are shared between locations and read from the active one,
+    so when the location changes the cycler switches it (``on_location``) and
+    invalidates what's on screen so it redraws with the new data at once.
+    """
+
+    def __init__(self, pages: list[dict], interval_sec: float, *,
+                 on_location: Optional[Callable[[int], None]] = None,
+                 persistent: Sequence[Layer] = ()):
         self.pages = pages
         self.interval = max(1.0, float(interval_sec or 1.0))
+        self.on_location = on_location
+        self.persistent = list(persistent)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._index = 0
+        self._loc: Optional[int] = None
+        seen: dict[int, Layer] = {}
+        for page in pages:
+            for layer in page.get("layers", []):
+                seen.setdefault(id(layer), layer)
+        self._all = list(seen.values())
 
     def activate(self, index: int) -> None:
         if not self.pages:
             return
         self._index = index % len(self.pages)
+        entry = self.pages[self._index]
+        loc = int(entry.get("loc", 0))
+        loc_changed = loc != self._loc
+        if loc_changed:
+            self._loc = loc
+            if self.on_location:
+                self.on_location(loc)
+            for layer in self.persistent:
+                layer.invalidate()
         # Only flip visibility here. The scheduler notices the change and
         # ticks newly shown layers on its next frame; ticking them from this
-        # thread raced the render thread drawing the same surfaces.
-        for i, page in enumerate(self.pages):
-            visible = i == self._index
-            for layer in page.get("layers", []):
-                if isinstance(layer, Layer):
-                    layer.set_visible(visible)
+        # thread raced the render thread drawing the same surfaces. Layers are
+        # shared between entries, so decide per layer, not per page.
+        shown = {id(layer) for layer in entry.get("layers", [])}
+        for layer in self._all:
+            layer.set_visible(id(layer) in shown)
+        if loc_changed:
+            for layer in entry.get("layers", []):
+                layer.invalidate()
 
     def start(self) -> None:
         if not self.pages or (self._thread and self._thread.is_alive()):
@@ -498,20 +541,25 @@ def _ticker_parts(alerts: list[dict], headlines: list[str]) -> tuple[str, str]:
     return (alert_text, "WEATHER")
 
 
-def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
-                  scale: float, alert_poller: Optional[NWSAlertPoller] = None,
-                  ) -> tuple[list[Layer], PageCycler]:
+def _build_layers(cfg: Config, contexts: Sequence[LocationContext], render_w: int,
+                  render_h: int, scale: float) -> tuple[list[Layer], PageCycler]:
     layers: list[Layer] = []
     pages: list[dict] = []
+    active = {"i": 0}
+
+    def ctx() -> LocationContext:
+        return contexts[active["i"]]
 
     def s(value: float, minimum: int = 0) -> int:
         return max(minimum, int(round(value * scale)))
 
     def read(key: str, default=None):
-        return store.get(key, default)
+        # Everything on screen reads from the location currently being shown.
+        return ctx().store.get(key, default)
 
     def nws_live() -> Optional[list[dict]]:
-        return alert_poller.alerts() if alert_poller is not None else None
+        poller = ctx().poller
+        return poller.alerts() if poller is not None else None
 
     def live_alerts() -> list[dict]:
         """NWS alerts while that poller is fresh (US, ~1 min old at most),
@@ -600,102 +648,124 @@ def _build_layers(cfg: Config, store: DataStore, render_w: int, render_h: int,
 
     def build_page(name: str, title: str,
                    builder: Callable[[tuple[int, int, int, int]], list[Layer]],
-                   top: int) -> None:
+                   top: int, context: LocationContext) -> list[Layer]:
         bounds = content_bounds(top)
         chrome = ChromeLayer(
             width=render_w, height=render_h,
-            location_name=cfg.location_name,
+            location_name=context.loc.name,
+            get_location=lambda: ctx().loc.name,
             page_title=title,
             scale=scale,
         )
         chrome.z = 0
         page_layers: list[Layer] = [chrome]
-        for layer in builder(bounds):
+        for layer in builder(bounds, context):
             layer.z = max(getattr(layer, "z", 50), 50)
             page_layers.append(layer)
         for layer in page_layers:
             layer.set_visible(False)
-        pages.append({"name": name, "layers": page_layers})
         layers.extend(page_layers)
+        return page_layers
 
-    add_page("current", "Current Conditions", lambda b: [
+    add_page("current", "Current Conditions", lambda b, c: [
         CurrentLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                      get_data=lambda: read("current", {}) or {},
                      min_interval=5.0, scale=scale)
     ], top=layout.CONTENT_TOP)
 
-    add_page("hourly", "12-Hour Trend", lambda b: [
+    add_page("hourly", "12-Hour Trend", lambda b, c: [
         HourlyGraphLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                          get_points=lambda: read("hourly_points", []) or [],
                          min_interval=15.0, scale=scale)
     ], top=layout.CONTENT_TOP)
 
-    add_page("daily", "7-Day Forecast", lambda b: [
+    add_page("daily", "7-Day Forecast", lambda b, c: [
         DailyLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                    get_days=lambda: read("daily_days", []) or [],
                    min_interval=30.0, scale=scale)
     ], top=layout.CONTENT_TOP)
 
     if cfg.radar_source != "off":
-        add_page("radar", "Live Radar", lambda b: [
+        add_page("radar", "Live Radar", lambda b, c: [
             # Ticking every 0.25s with frame_hold=3 used to redo the full
             # composite (frame paste, mask, legend, badge, text) on every
             # tick even though the on-screen frame only advanced on every
             # 3rd one. Matching the interval to the hold cuts that 3x
             # redundant redraw while keeping the same on-screen cadence.
             RadarLayer(x=b[0], y=b[1], w=b[2], h=b[3], min_interval=0.75,
-                       get_new_frames=lambda: (
+                       # Radar keeps animation frames inside the layer, so
+                       # each location gets its own instead of sharing one.
+                       get_new_frames=lambda c=c: (
                            lambda fn: fn() if callable(fn) else []
-                       )(store.get("radar_new_frames")),
-                       get_source=lambda: str(read("radar_source", "") or ""),
+                       )(c.store.get("radar_new_frames")),
+                       get_source=lambda c=c: str(c.store.get("radar_source", "") or ""),
                        frame_hold=1, scale=scale)
         ], top=layout.CONTENT_TOP)
 
-    add_page("regional", "Regional Conditions", lambda b: [
+    add_page("regional", "Regional Conditions", lambda b, c: [
         RegionalLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                       get_points=lambda: read("regional_points", []) or [],
-                      get_map=lambda: store.get("regional_map_image"),
-                      get_bounds=lambda: store.get("regional_map_bounds"),
+                      get_map=lambda: read("regional_map_image"),
+                      get_bounds=lambda: read("regional_map_bounds"),
                       min_interval=20.0, scale=scale)
     ], top=layout.CONTENT_TOP)
 
-    add_page("forecast_map", "Forecast Highs", lambda b: [
+    add_page("forecast_map", "Forecast Highs", lambda b, c: [
         ForecastMapLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                          get_points=lambda: read("forecast_points", []) or [],
-                         get_map=lambda: store.get("forecast_map_image"),
-                         get_bounds=lambda: store.get("forecast_map_bounds"),
+                         get_map=lambda: read("forecast_map_image"),
+                         get_bounds=lambda: read("forecast_map_bounds"),
                          min_interval=20.0, scale=scale)
     ], top=layout.CONTENT_TOP)
 
-    add_page("forecast_text", "Extended Forecast", lambda b: [
+    add_page("forecast_text", "Extended Forecast", lambda b, c: [
         ForecastTextLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                           get_periods=lambda: read("forecast_periods", []) or [],
                           min_interval=30.0, scale=scale)
     ], top=layout.CONTENT_TOP)
 
-    if cfg.surf_lat is not None and cfg.surf_lon is not None:
-        add_page("surf", "Surf Report", lambda b: [
+    if any(c.loc.has_surf for c in contexts):
+        add_page("surf", "Surf Report", lambda b, c: [
             SurfLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                       get_report=lambda: read("surf_report", {}) or {},
                       min_interval=20.0, scale=scale)
         ], top=layout.CONTENT_TOP)
 
-    add_page("almanac", "Almanac", lambda b: [
+    add_page("almanac", "Almanac", lambda b, c: [
         AlmanacLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                      get_rows=lambda: read("almanac_rows", []) or [],
                      min_interval=20.0, scale=scale)
     ], top=layout.CONTENT_TOP)
 
-    for name in cfg.pages:
-        if name in registered:
-            build_page(name, *registered[name])
+    # One set of page layers shared by every location (they read from the
+    # active one), except radar, which is built per location.
+    built: dict = {}
+
+    def page_layers(name: str, i: int) -> list[Layer]:
+        key = (name, i) if name == "radar" else name
+        if key not in built:
+            built[key] = build_page(name, *registered[name], contexts[i])
+        return built[key]
+
+    for i, context in enumerate(contexts):
+        for name in cfg.pages:
+            if name not in registered:
+                continue
+            if name == "surf" and not context.loc.has_surf:
+                continue
+            pages.append({"name": name, "layers": page_layers(name, i), "loc": i})
     if not pages and registered:
         # Every chosen page was unavailable (e.g. only "surf" with no surf
         # spot): fall back to the first one that exists rather than a blank.
         first = next(iter(registered))
-        build_page(first, *registered[first])
+        pages.append({"name": first, "layers": page_layers(first, 0), "loc": 0})
 
-    cycler = PageCycler(pages, cfg.page_duration_sec)
+    def on_location(i: int) -> None:
+        active["i"] = i
+        set_active_timezone(contexts[i].tz)
+
+    cycler = PageCycler(pages, cfg.page_duration_sec, on_location=on_location,
+                        persistent=[header_current, clock, ticker, alert_bar])
     if pages:
         cycler.activate(0)
     return layers, cycler
@@ -813,52 +883,60 @@ def main(argv: Optional[list[str]] = None) -> int:
               "PIRATE_WEATHER_API_KEY.", flush=True)
         return 2
 
-    # Resolve ZIP -> coordinates when explicit lat/lon were not supplied.
-    if (cfg.lat is None or cfg.lon is None) and cfg.zip:
-        lookup = resolve_zip(cfg.zip)
-        if lookup:
-            cfg.lat = cfg.lat if cfg.lat is not None else lookup.get("lat")
-            cfg.lon = cfg.lon if cfg.lon is not None else lookup.get("lon")
-            if cfg.location_name == "PWS":
-                city = (lookup.get("city") or "").strip()
-                state = (lookup.get("state") or "").strip()
-                resolved = f"{city}, {state}".strip(", ")
-                if resolved:
-                    cfg.location_name = resolved
-    if cfg.lat is None or cfg.lon is None:
+    # Resolve each location (ZIP -> coordinates and a display name).
+    locations: list[Location] = []
+    for loc in cfg.locations:
+        if (loc.lat is None or loc.lon is None) and loc.zip:
+            lookup = resolve_zip(loc.zip)
+            if lookup:
+                loc.lat = loc.lat if loc.lat is not None else lookup.get("lat")
+                loc.lon = loc.lon if loc.lon is not None else lookup.get("lon")
+                if not loc.name or loc.name == "PWS":
+                    city = (lookup.get("city") or "").strip()
+                    state = (lookup.get("state") or "").strip()
+                    loc.name = f"{city}, {state}".strip(", ") or loc.name
+        if loc.lat is None or loc.lon is None:
+            print(f"[pws] WARNING: could not resolve location {loc.name or loc.zip!r}; "
+                  f"skipping it", flush=True)
+            continue
+        loc.name = loc.name or f"{loc.lat:.3f}, {loc.lon:.3f}"
+        locations.append(loc)
+    if not locations:
         print("[pws] FATAL: could not resolve a location. Provide a "
               "valid --zip or explicit --lat/--lon.", flush=True)
         return 2
 
     units = normalize.units_for(cfg.units)
-
-    try:
-        client = PirateWeatherClient(
-            api_key=cfg.api_key,
-            lat=cfg.lat,
-            lon=cfg.lon,
-            units=cfg.units,
-            cache_ttl=cfg.data_interval_sec,
-            secondary_ttl=cfg.regional_interval_sec,
-            user_agent=cfg.user_agent,
-        )
-    except PirateWeatherError as exc:
-        print(f"[pws] FATAL: {exc}", flush=True)
-        return 2
-
-    # Timezone: prefer the explicit setting, else let the API tell us.
-    tz_name = cfg.timezone
-    if not tz_name:
-        try:
-            tz_name = client.timezone_name()
-        except PirateWeatherError as exc:
-            print(f"[pws] WARNING: initial fetch failed: {exc}", flush=True)
-            tz_name = None
-    set_timezone(tz_name, cfg.lat, cfg.lon)
     set_clock_24h(cfg.clock_24h)
-    print(f"[pws] location={cfg.location_name} "
-          f"({cfg.lat:.3f},{cfg.lon:.3f}) tz={tz_name or 'system'} "
-          f"units={cfg.units}", flush=True)
+
+    contexts: list[LocationContext] = []
+    for loc in locations:
+        try:
+            client = PirateWeatherClient(
+                api_key=cfg.api_key, lat=loc.lat, lon=loc.lon, units=cfg.units,
+                cache_ttl=cfg.data_interval_sec,
+                secondary_ttl=cfg.regional_interval_sec,
+                user_agent=cfg.user_agent,
+            )
+        except PirateWeatherError as exc:
+            print(f"[pws] FATAL: {exc}", flush=True)
+            return 2
+        # Timezone: prefer the explicit setting, else let the API tell us.
+        tz_name = cfg.timezone
+        if not tz_name:
+            try:
+                tz_name = client.timezone_name()
+            except PirateWeatherError as exc:
+                print(f"[pws] WARNING: initial fetch failed for {loc.name}: {exc}", flush=True)
+                tz_name = None
+        tz = resolve_timezone(tz_name, loc.lat, loc.lon)
+        contexts.append(LocationContext(loc=loc, client=client, tz=tz))
+        print(f"[pws] location={loc.name} ({loc.lat:.3f},{loc.lon:.3f}) "
+              f"tz={tz or 'system'} units={cfg.units}", flush=True)
+    set_active_timezone(contexts[0].tz)
+    if len(contexts) > 1:
+        print(f"[pws] channel shows {len(contexts)} locations in turn: "
+              + " · ".join(c.loc.name for c in contexts), flush=True)
 
     output_w = int(cfg.width) if cfg.width > 0 else BASE_WIDTH
     output_h = int(cfg.height) if cfg.height > 0 else BASE_HEIGHT
@@ -883,10 +961,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         [int(round(v * scale)) for v in (62, 84, 96, 190)],
     )
 
-    alert_poller = NWSAlertPoller(cfg.lat, cfg.lon, cfg.user_agent)
-    alert_poller.start()
-    store = _make_datastore(cfg, client, units, output_w, output_h, scale)
-    layers, cycler = _build_layers(cfg, store, output_w, output_h, scale, alert_poller)
+    station = os.environ.get("PWS_STATION_INDEX")
+    board = status.StatusBoard(
+        status.status_path(Path(__file__).resolve().parents[1], station) if station else None)
+    for context in contexts:
+        context.poller = NWSAlertPoller(context.loc.lat, context.loc.lon, cfg.user_agent)
+        context.poller.start()
+        context.store = _make_datastore(cfg, context.loc, context.client, units,
+                                        output_w, output_h, scale, tz=context.tz, board=board)
+    layers, cycler = _build_layers(cfg, contexts, output_w, output_h, scale)
     compositor = Compositor(w=output_w, h=output_h)
     scheduler = Scheduler(layers=layers, cfr_hz=cfg.output_fps)
     cycler.start()
@@ -903,7 +986,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        for shutdown in (store.stop, cycler.stop, alert_poller.stop, streamer.stop):
+        shutdowns = [cycler.stop, streamer.stop]
+        for context in contexts:
+            shutdowns += [context.store.stop, context.poller.stop]
+        for shutdown in shutdowns:
             try:
                 shutdown()
             except Exception:

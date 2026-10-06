@@ -11,6 +11,7 @@ the same forecast call, so there are no fields for them.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import shutil
@@ -311,17 +312,36 @@ _SHARED_FIELDS: list[dict[str, Any]] = [
 ]
 
 
+#: Channels stations can be put on. Stations on the same letter share one
+#: Dispatcharr channel that takes turns between their locations.
+_CHANNEL_LETTERS = ("A", "B", "C")
+
+
 def _build_fields() -> list[dict[str, Any]]:
     """Shared settings, then one configuration block per station."""
     fields: list[dict[str, Any]] = [deepcopy(f) for f in _SHARED_FIELDS]
+    fields.append({
+        "id": "channels_info",
+        "label": "Stations and Channels",
+        "type": "info",
+        "description": (
+            "Each station is one location. Pick which channel it appears on: "
+            "stations set to the same channel share it, showing each location "
+            "in turn (all three on Channel A = one channel; Stations 1 and 2 on "
+            "A with Station 3 on B = two channels). By default every station "
+            "has its own channel. A shared channel uses the channel number of "
+            "its lowest-numbered station."
+        ),
+    })
     for idx in range(1, _STATION_COUNT + 1):
         fields.append({
             "id": f"station_{idx}_info",
             "label": f"Station {idx}",
             "type": "info",
             "description": (
-                "The primary station." if idx == 1
-                else "Optional additional station and channel."
+                "The primary location." if idx == 1
+                else "Optional additional location - on its own channel or "
+                     "sharing one (see Station Channel)."
             ),
         })
         fields.append({
@@ -330,9 +350,24 @@ def _build_fields() -> list[dict[str, Any]]:
             "type": "boolean",
             "default": idx == 1,
             "help_text": (
-                "Each enabled station runs its own renderer and channel. "
-                "Refresh intervals are shared out between them so the monthly "
-                "API quota stays the same no matter how many you run."
+                "Each enabled station is one location. Refresh intervals are "
+                "shared out between locations so the monthly API quota stays "
+                "the same no matter how many you run."
+            ),
+        })
+        fields.append({
+            "id": _station_field_id(idx, "channel"),
+            "label": f"Station {idx} Channel",
+            "type": "select",
+            "default": _CHANNEL_LETTERS[idx - 1],
+            "options": [
+                {"value": letter,
+                 "label": f"Channel {letter}" + (" (its own channel)" if i == idx - 1 else "")}
+                for i, letter in enumerate(_CHANNEL_LETTERS)
+            ],
+            "help_text": (
+                "Stations on the same channel share it, taking turns. Leave on "
+                f"Channel {_CHANNEL_LETTERS[idx - 1]} for a channel of its own."
             ),
         })
         fields.append({
@@ -397,14 +432,17 @@ def _build_fields() -> list[dict[str, Any]]:
             "label": f"Station {idx} Channel Number",
             "type": "number",
             "default": "",
-            "help_text": "Optional channel number. Auto-assigned when blank.",
+            "help_text": (
+                "Optional channel number. Auto-assigned when blank. On a shared "
+                "channel, the lowest-numbered station's number is used."
+            ),
         })
     return fields
 
 
 class Plugin:
     name = "PWS - Pirate Weather Station"
-    version = "1.5.1"
+    version = "1.6.0"
     description = (
         "TV-style weather channels powered by the Pirate Weather API. Runs up "
         "to three stations, each with its own location and Dispatcharr channel."
@@ -705,7 +743,8 @@ class Plugin:
                 "settings": settings,
             }
 
-        wanted = self._configured_stations(settings)
+        groups = self._channel_groups(settings)
+        wanted = [group[0] for group in groups]
         if not wanted:
             enabled = [i for i in self._station_indices()
                        if self._station_enabled(settings, i)]
@@ -717,14 +756,20 @@ class Plugin:
             return {"status": "error", "message": msg, "settings": settings}
 
         desired = self._resolve_output_settings(settings)
-        data_interval, regional_interval = self._refresh_intervals(settings, len(wanted))
+        # Quota scales with locations, not channels: a shared channel still
+        # polls the forecast once per location.
+        locations = sum(len(group) for group in groups)
+        data_interval, regional_interval = self._refresh_intervals(settings, locations)
 
         updates: Dict[str, Any] = {}
         clears: list[str] = []
         started: list[str] = []
         errors: list[str] = []
+        notes: list[str] = []
+        lead_of = {idx: group[0] for group in groups for idx in group}
 
-        # Stop any station that is running but no longer wanted.
+        # Stop any channel that is running but no longer led by this station
+        # (disabled, or merged into another station's channel).
         for idx in self._station_indices():
             if idx in wanted:
                 continue
@@ -733,16 +778,24 @@ class Plugin:
             if pid and self._is_process_running(pid, token):
                 self._terminate_process(pid, logger, expected_token=token)
                 if logger:
-                    logger.info("PWS station %s stopped (no longer enabled)", idx)
+                    logger.info("PWS station %s stopped (no longer its own channel)", idx)
+                old_number = self._station_runtime(settings, idx, "resolved_channel_number")
+                if idx in lead_of and old_number:
+                    notes.append(
+                        f"Station {idx} now shares Channel "
+                        f"{self._station_channel(settings, idx)} with Station "
+                        f"{lead_of[idx]}; its old channel {old_number} is no longer "
+                        f"used and can be deleted from Channels")
             if pid:
                 clears.extend([_station_runtime_key(idx, "pid"),
                                _station_runtime_key(idx, "run_token")])
             updates[_station_runtime_key(idx, "running")] = False
 
-        for idx in wanted:
+        for group in groups:
+            idx = group[0]
             result = self._start_station(
                 idx, settings, api_key, desired,
-                data_interval, regional_interval, logger,
+                data_interval, regional_interval, logger, members=group,
             )
             if result.get("error"):
                 errors.append(f"Station {idx}: {result['error']}")
@@ -765,21 +818,29 @@ class Plugin:
                 "settings": persisted,
             }
 
-        message = f"PWS started {len(started)} station(s): " + "; ".join(started)
-        if len(wanted) > 1:
+        message = f"PWS started {len(started)} channel(s): " + "; ".join(started)
+        if locations > 1:
             message += (f". Forecast refresh is every {data_interval // 60} min per "
-                        f"station to stay inside the API quota.")
+                        f"location to stay inside the API quota.")
+        if notes:
+            message += ". " + ". ".join(notes)
         if errors:
             message += " Problems: " + "; ".join(errors)
         return {"status": "running", "message": message, "settings": persisted}
 
     def _start_station(self, idx: int, settings: Dict[str, Any], api_key: str,
                        desired: Dict[str, Any], data_interval: int,
-                       regional_interval: int, logger: Any) -> Dict[str, Any]:
-        """Start one station. Returns updates/clears, or an error string."""
+                       regional_interval: int, logger: Any,
+                       members: Optional[list[int]] = None) -> Dict[str, Any]:
+        """
+        Start one channel, led by station ``idx`` and showing every station
+        in ``members`` in turn. Returns updates/clears, or an error string.
+        """
         updates: Dict[str, Any] = {}
         clears: list[str] = []
         rk = lambda name: _station_runtime_key(idx, name)
+        members = members or [idx]
+        locations = [self._station_location(settings, m) for m in members]
 
         zip_code = self._station_zip(settings, idx)
         coords = None if zip_code else self._station_coords(settings, idx)
@@ -794,7 +855,7 @@ class Plugin:
         # encoding change does.
         desired = {**desired, "surf": self._station_surf(settings, idx)}
         spec = self._launch_spec(idx, settings, api_key, desired,
-                                 data_interval, regional_interval)
+                                 data_interval, regional_interval, locations)
 
         pid = self._station_runtime(settings, idx, "pid")
         run_token = self._station_runtime(settings, idx, "run_token")
@@ -834,12 +895,8 @@ class Plugin:
         if not self._wait_for_port(port):
             return {"error": f"port {port} is already in use"}
 
-        location_label = (
-            str(self._station_setting(settings, idx, "location_name") or "").strip()
-            or (self._resolve_location(zip_code) if zip_code else "")
-            or (self._resolve_coords_location(coords) if coords else "")
-            or ""
-        )
+        # A shared channel is named after all of its locations.
+        location_label = " · ".join(loc["name"] for loc in locations)
 
         try:
             stream, channel = self._ensure_stream_and_channel(
@@ -855,6 +912,7 @@ class Plugin:
             pid = self._launch_process(
                 idx, api_key, zip_code, coords, location_label, desired, settings,
                 token, stream_url, data_interval, regional_interval, logger,
+                locations=locations,
             )
         except Exception as exc:
             if logger:
@@ -954,7 +1012,24 @@ class Plugin:
         info = station_status.read(station_status.status_path(self._base_dir, idx))
         if not info:
             return "starting up"
+        entries = info.get("locations")
+        if isinstance(entries, list) and entries:
+            # A shared channel: one line per location, quota once at the end.
+            parts = [f"{e.get('location')}: {self._health_line(e, quota=False)}"
+                     for e in entries]
+            quota = self._health_line(entries[0], quota=True, only_quota=True)
+            return " | ".join(parts) + (f" ({quota})" if quota else "")
+        return self._health_line(info, quota=True)
+
+    def _health_line(self, info: Dict[str, Any], *, quota: bool,
+                     only_quota: bool = False) -> str:
         bits = []
+        if only_quota:
+            remaining, limit = info.get("quota_remaining"), info.get("quota_limit")
+            if remaining is None:
+                return ""
+            return (f"{remaining:,}/{limit:,} API calls left this month" if limit
+                    else f"{remaining:,} API calls left this month")
         updated = info.get("updated_at")
         if updated:
             age = max(0, int(time.time() - float(updated)))
@@ -968,7 +1043,7 @@ class Plugin:
         elif not updated:
             bits.append("waiting for first forecast")
         remaining, limit = info.get("quota_remaining"), info.get("quota_limit")
-        if remaining is not None:
+        if quota and remaining is not None:
             bits.append(f"{remaining:,}/{limit:,} API calls left this month" if limit
                         else f"{remaining:,} API calls left this month")
         return ", ".join(bits)
@@ -1110,7 +1185,8 @@ class Plugin:
 
     def _launch_spec(self, idx: int, settings: Dict[str, Any], api_key: str,
                      desired: Dict[str, Any], data_interval: int,
-                     regional_interval: int) -> Dict[str, Any]:
+                     regional_interval: int,
+                     locations: Optional[list[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         Everything a station's renderer is launched with, for change detection.
 
@@ -1119,12 +1195,10 @@ class Plugin:
         "already running" with the old configuration. The API key is stored
         only as a short hash.
         """
-        zip_code = self._station_zip(settings, idx)
-        coords = None if zip_code else self._station_coords(settings, idx)
         return {
-            "zip": zip_code,
-            "coords": list(coords) if coords else None,
-            "location_name": str(self._station_setting(settings, idx, "location_name") or "").strip(),
+            # Every location on the channel (names, places, surf spots), so
+            # regrouping stations or editing any of them relaunches it.
+            "locations": locations or [self._station_location(settings, idx)],
             "units": settings.get("units") or "us",
             "clock": self._clock_format(settings),
             "pages": self._page_order(settings),
@@ -1191,6 +1265,48 @@ class Plugin:
             if has_zip or self._station_coords(settings, idx):
                 out.append(idx)
         return out
+
+    def _station_channel(self, settings: Dict[str, Any], idx: int) -> str:
+        raw = str(self._station_setting(settings, idx, "channel") or "").strip().upper()
+        return raw if raw in _CHANNEL_LETTERS else _CHANNEL_LETTERS[idx - 1]
+
+    def _channel_groups(self, settings: Dict[str, Any]) -> list[list[int]]:
+        """
+        Configured stations grouped by channel letter, e.g. [[1, 2], [3]].
+        Each group becomes one Dispatcharr channel and one renderer; its first
+        (lowest-numbered) station leads: its channel number, port, log and
+        runtime state are the channel's.
+        """
+        groups: Dict[str, list[int]] = {}
+        for idx in self._configured_stations(settings):
+            groups.setdefault(self._station_channel(settings, idx), []).append(idx)
+        return sorted(groups.values(), key=lambda g: g[0])
+
+    def _station_label(self, settings: Dict[str, Any], idx: int) -> str:
+        zip_code = self._station_zip(settings, idx)
+        coords = None if zip_code else self._station_coords(settings, idx)
+        return (
+            str(self._station_setting(settings, idx, "location_name") or "").strip()
+            or (self._resolve_location(zip_code) if zip_code else "")
+            or (self._resolve_coords_location(coords) if coords else "")
+            or zip_code
+            or (f"{coords[0]:.3f},{coords[1]:.3f}" if coords else f"Station {idx}")
+        )
+
+    def _station_location(self, settings: Dict[str, Any], idx: int) -> Dict[str, Any]:
+        """One entry of the renderer's --locations-json."""
+        zip_code = self._station_zip(settings, idx)
+        coords = None if zip_code else self._station_coords(settings, idx)
+        surf = self._station_surf(settings, idx) or {}
+        return {
+            "name": self._station_label(settings, idx),
+            "zip": zip_code or None,
+            "lat": coords[0] if coords else None,
+            "lon": coords[1] if coords else None,
+            "surf_lat": surf.get("lat"),
+            "surf_lon": surf.get("lon"),
+            "surf_name": surf.get("name") or "",
+        }
 
     def _station_runtime(self, settings: Dict[str, Any], idx: int,
                          field: str) -> Any:
@@ -1578,9 +1694,14 @@ class Plugin:
                         location_label: str, encoding: Dict[str, Any],
                         settings: Dict[str, Any], run_token: str,
                         stream_url: str, data_interval: int,
-                        regional_interval: int, logger: Any) -> int:
+                        regional_interval: int, logger: Any,
+                        locations: Optional[list[Dict[str, Any]]] = None) -> int:
         cmd = [self._python_interpreter(), "-m", "pws.main"]
-        if zip_code:
+        if locations:
+            # Every location this channel shows, in order (one for a normal
+            # station); the renderer takes turns between them.
+            cmd += ["--locations-json", json.dumps(locations)]
+        elif zip_code:
             cmd += ["--zip", zip_code]
         elif coords:
             cmd += ["--lat", f"{coords[0]:.6f}", "--lon", f"{coords[1]:.6f}"]
@@ -1599,13 +1720,14 @@ class Plugin:
             "--video-kbps", str(encoding["video_kbps"]),
             "--out", stream_url,
         ]
-        if location_label:
-            cmd += ["--location-name", location_label]
         surf = encoding.get("surf")
-        if surf:
-            cmd += ["--surf-lat", f"{surf['lat']:.6f}", "--surf-lon", f"{surf['lon']:.6f}"]
-            if surf.get("name"):
-                cmd += ["--surf-name", surf["name"]]
+        if not locations:
+            if location_label:
+                cmd += ["--location-name", location_label]
+            if surf:
+                cmd += ["--surf-lat", f"{surf['lat']:.6f}", "--surf-lon", f"{surf['lon']:.6f}"]
+                if surf.get("name"):
+                    cmd += ["--surf-name", surf["name"]]
         for url in self._sanitize_rss_urls(settings.get("rss_urls") or ""):
             cmd += ["--rss-url", url]
 
@@ -1634,7 +1756,8 @@ class Plugin:
         env["PYTHONDONTWRITEBYTECODE"] = "1"
 
         location_desc = (
-            f"ZIP {zip_code}" if zip_code
+            " · ".join(loc["name"] for loc in locations) if locations
+            else f"ZIP {zip_code}" if zip_code
             else f"{coords[0]:.4f},{coords[1]:.4f}" if coords
             else "unknown location"
         )

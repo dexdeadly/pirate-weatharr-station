@@ -161,31 +161,48 @@ bundled `pws/data/` lookup tables, not the network. It also does not declare
 start-lock file, stay inside the plugin's own `/data/plugins/pirate_weatharr_station/`
 directory, which every plugin may always write to.
 
-### Multiple stations
+### Multiple stations and shared channels
 
-PWS runs up to **three stations**, each with its own location, renderer process
-and channel. Station 1 is enabled by default; tick **Enable Station 2/3** and
-give each a ZIP code — or a Latitude/Longitude, for locations outside the
-US — to add more.
+PWS handles up to **three stations** — three locations. Station 1 is enabled
+by default; tick **Enable Station 2/3** and give each a ZIP code (or a
+Latitude/Longitude outside the US) to add more.
 
-| Station | Port | Stream URL |
+Each station also has a **Channel** setting — Channel A, B or C — that decides
+which Dispatcharr channel it appears on. Stations on the same letter share one
+channel, which shows each location in turn: a full set of pages for the first
+location, then the next. The header, local time (in that location's
+timezone), alert bar, ticker, maps, radar and surf page all follow the
+location on screen.
+
+| You want | Station 1 | Station 2 | Station 3 | Result |
+|---|---|---|---|---|
+| A channel per location (default) | A | B | C | 3 channels |
+| Everything on one channel | A | A | A | 1 channel, 3 locations |
+| Two together, one separate | A | A | B | 2 channels |
+
+A shared channel is named after its locations (`Houston, TX · Austin, TX -
+PWS`) and uses the channel number, port and log of its lowest-numbered
+station. When a station that had its own channel joins another, PWS stops its
+old channel and the Start message names it so you can delete it from
+Channels — PWS never deletes channels itself. Splitting stations apart again
+reuses each station's old channel if it still exists.
+
+| Lead station | Port | Stream URL |
 |---|---|---|
 | 1 | 5960 | `http://127.0.0.1:5960/pws.ts` |
 | 2 | 5961 | `http://127.0.0.1:5961/pws_2.ts` |
 | 3 | 5962 | `http://127.0.0.1:5962/pws_3.ts` |
 
-The API key, units, resolution, bitrate, refresh interval, radar source, music
-volume and news feeds are shared by all stations. Only the location (ZIP or
-Latitude/Longitude), display name and channel number are per station.
+The API key, units, resolution, bitrate, refresh interval, radar source,
+music, pages and news feeds are shared. Per station: location (ZIP or
+Latitude/Longitude), display name, surf spot, channel and channel number.
+API quota scales with the number of **locations**, not channels — a shared
+channel still checks the forecast once per location.
 
-Each station's channel is named `{Location} - PWS` (e.g. `Levittown, PA -
-PWS`) and uses the plugin's own icon as its channel logo. Both the name and
-logo — along with the channel number, once set — stay in sync on every
-subsequent Start, so changing a station's location or icon later updates the
-existing channel rather than creating a new one.
-
-Disabling a station and pressing **Start** again stops just that station and
-leaves the others running. **Stop** halts all of them.
+Channels use the plugin's own icon as their logo. The name, logo and channel
+number stay in sync on every Start, so changing a location later updates the
+existing channel rather than creating a new one. Disabling a station and
+pressing **Start** stops just that location; **Stop** halts everything.
 
 ### Status and data freshness
 

@@ -74,3 +74,33 @@ def test_slow_ticks_do_not_lose_time(monkeypatch):
     # the frame count has to keep matching elapsed time at the target rate.
     n, elapsed = run_scheduler(monkeypatch, 120, 30, slow_every=8.0, slow_cost=0.3)
     assert abs(n - (elapsed * 30 + 1)) < 2.5
+
+
+def test_page_cycler_takes_turns_between_locations():
+    from pws.main import PageCycler
+    current, maps = Box(0, 0, 10, 10, (1, 1, 1, 255)), Box(0, 0, 10, 10, (2, 2, 2, 255))
+    radar_a, radar_b = Box(0, 0, 10, 10, (3, 3, 3, 255)), Box(0, 0, 10, 10, (4, 4, 4, 255))
+    header = Box(0, 0, 10, 10, (5, 5, 5, 255))
+    pages = [
+        {"name": "current", "layers": [current], "loc": 0},
+        {"name": "radar", "layers": [radar_a], "loc": 0},
+        {"name": "current", "layers": [current], "loc": 1},   # same layer, next location
+        {"name": "radar", "layers": [radar_b], "loc": 1},     # per-location radar
+        {"name": "regional", "layers": [maps], "loc": 1},
+    ]
+    switched = []
+    cycler = PageCycler(pages, 10, on_location=switched.append, persistent=[header])
+
+    cycler.activate(0)
+    assert switched == [0] and current.visible and not radar_a.visible
+    cycler.activate(1)
+    assert switched == [0] and radar_a.visible and not current.visible
+    gen_current, gen_header = current.generation, header.generation
+    cycler.activate(2)                     # location changes on a shared layer
+    assert switched == [0, 1]
+    assert current.visible and not radar_a.visible and not radar_b.visible
+    assert current.generation > gen_current and header.generation > gen_header
+    cycler.activate(3)
+    assert radar_b.visible and not radar_a.visible and not current.visible
+    cycler.activate(5)                     # wraps to the first location again
+    assert switched == [0, 1, 0] and current.visible

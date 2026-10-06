@@ -18,6 +18,8 @@ class Layer:
         self.surface = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         self._last_hash: int | None = None
         self.visible: bool = True
+        #: Bumped by invalidate(); the scheduler redraws the layer right away.
+        self.generation: int = 0
         try:
             self.scale = float(scale or 1.0)
         except (TypeError, ValueError):
@@ -52,3 +54,15 @@ class Layer:
 
     def is_visible(self) -> bool:
         return self.visible
+
+    def invalidate(self) -> None:
+        """
+        Forget cached state so the next tick repaints, and ask the scheduler
+        to tick this layer now. Used when the location a layer shows changes
+        underneath it (channels that take turns between several locations).
+        """
+        self.generation += 1
+        self._last_hash = None
+        for attr in ("_state", "_icon_state", "_cap_state"):
+            if hasattr(self, attr):
+                setattr(self, attr, None)

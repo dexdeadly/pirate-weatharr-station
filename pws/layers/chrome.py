@@ -37,9 +37,13 @@ class ChromeLayer(Layer):
         provider: str = "Pirate Weather",
         min_interval: float = 5.0,
         scale: float = 1.0,
+        get_location=None,
     ) -> None:
         super().__init__(0, 0, width, height, min_interval=min_interval, scale=scale)
         self.location = location_name or ""
+        # Channels that take turns between locations pass a callable so the
+        # header names whichever location is on screen.
+        self.get_location = get_location
         self.page_title = page_title or ""
         self.title = title
         self.wordmark = wordmark
@@ -48,6 +52,11 @@ class ChromeLayer(Layer):
         self._painted = False
 
     def tick(self, now: float):
+        if callable(self.get_location):
+            try:
+                self.location = str(self.get_location() or "")
+            except Exception:
+                pass
         state = (self.page_title, self.location)
         if self._painted and state == self._state:
             return []

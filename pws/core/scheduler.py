@@ -37,7 +37,7 @@ class Scheduler:
         clock = time.monotonic
         start = clock()
         due = [start] * len(self.layers)
-        shown: list[Optional[bool]] = [None] * len(self.layers)
+        shown: list[Optional[tuple]] = [None] * len(self.layers)
         next_frame = start
         while True:
             if should_stop and should_stop():
@@ -58,8 +58,9 @@ class Scheduler:
             dirty = []
             for i, L in enumerate(self.layers):
                 visible = getattr(L, "visible", True)
-                if visible != shown[i]:
-                    shown[i] = visible
+                seen = (visible, getattr(L, "generation", 0))
+                if seen != shown[i]:
+                    shown[i] = seen
                     full = True
                     if visible:
                         # Hidden layers don't tick, so a page that just came

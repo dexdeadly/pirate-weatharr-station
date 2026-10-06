@@ -108,7 +108,7 @@ def plugin_env(tmp_path, monkeypatch):
     created: list[int] = []
 
     def fake_launch(self, idx, api_key, zip_code, coords, label, encoding, settings,
-                    token, url, di, ri, logger):
+                    token, url, di, ri, logger, locations=None):
         # Same argv shape as a real renderer ("pws.main ... --out"): the plugin
         # falls back to that shape check when environ is momentarily unreadable.
         p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)",
@@ -117,7 +117,7 @@ def plugin_env(tmp_path, monkeypatch):
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              start_new_session=True)
         procs.append(p)
-        launches.append((idx, p.pid, dict(settings)))
+        launches.append((idx, p.pid, dict(settings), list(locations or []), label, di))
         return p.pid
 
     def fake_ensure(self, settings, idx, label, url, fallback):

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,6 +29,51 @@ def parse_pages(raw: str | None) -> list[str]:
         if name in PAGE_NAMES and name not in seen:
             seen.append(name)
     return seen or list(PAGE_NAMES)
+
+
+@dataclass
+class Location:
+    """One place a channel shows. A channel can take turns between several."""
+    name: str
+    zip: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+    surf_lat: float | None = None
+    surf_lon: float | None = None
+    surf_name: str = ""
+
+    @property
+    def has_surf(self) -> bool:
+        return self.surf_lat is not None and self.surf_lon is not None
+
+
+def parse_locations(raw: str | None) -> list[Location]:
+    """--locations-json: a list of {name, zip, lat, lon, surf_lat, surf_lon, surf_name}."""
+    if not raw:
+        return []
+    try:
+        items = json.loads(raw)
+    except ValueError:
+        raise SystemExit("--locations-json is not valid JSON")
+    out: list[Location] = []
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        def num(key):
+            try:
+                return float(item[key]) if item.get(key) not in (None, "") else None
+            except (TypeError, ValueError):
+                return None
+        loc = Location(
+            name=str(item.get("name") or "").strip(),
+            zip=(str(item.get("zip") or "").strip() or None),
+            lat=num("lat"), lon=num("lon"),
+            surf_lat=num("surf_lat"), surf_lon=num("surf_lon"),
+            surf_name=str(item.get("surf_name") or "").strip(),
+        )
+        if loc.zip or (loc.lat is not None and loc.lon is not None):
+            out.append(loc)
+    return out
 
 
 @dataclass
@@ -70,6 +116,9 @@ class Config:
     surf_lat: float | None = None
     surf_lon: float | None = None
     surf_name: str = ""
+
+    # Every location this channel shows, in order (one for a normal station).
+    locations: list[Location] = field(default_factory=list)
 
     # News ticker
     rss_urls: list[str] = field(default_factory=list)
@@ -146,6 +195,10 @@ def parse_args(argv: list[str] | None = None) -> Config:
     surf.add_argument("--surf-lon", type=float, default=None)
     surf.add_argument("--surf-name", type=str, default="")
 
+    p.add_argument("--locations-json", type=str, default=None,
+                   help="JSON list of locations shown in turn on this channel "
+                        "(overrides --zip/--lat/--lon/--location-name/--surf-*)")
+
     rss = p.add_argument_group("News / RSS")
     rss.add_argument("--rss-url", dest="rss_urls", action="append", default=[])
     rss.add_argument("--rss-refresh-sec", type=int, default=300)
@@ -155,7 +208,15 @@ def parse_args(argv: list[str] | None = None) -> Config:
 
     api_key = (args.api_key or os.environ.get("PIRATE_WEATHER_API_KEY") or "").strip()
 
+    surf_lat = args.surf_lat if args.surf_lon is not None else None
+    surf_lon = args.surf_lon if args.surf_lat is not None else None
+    locations = parse_locations(args.locations_json) or [Location(
+        name=args.location_name, zip=args.zip, lat=args.lat, lon=args.lon,
+        surf_lat=surf_lat, surf_lon=surf_lon, surf_name=(args.surf_name or "").strip(),
+    )]
+
     return Config(
+        locations=locations,
         api_key=api_key,
         units=args.units,
         zip=args.zip,

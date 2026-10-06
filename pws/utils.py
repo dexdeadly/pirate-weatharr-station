@@ -9,6 +9,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import threading
+
 import requests
 
 try:
@@ -144,36 +146,61 @@ def timezone_from_coordinates(lat: float | None, lon: float | None) -> Optional[
         return None
 
 
-def set_timezone(name: str | None = None, lat: float | None = None, lon: float | None = None) -> None:
-    global _TZ, _TZ_NAME
-    tz_name = name
-    if not tz_name:
-        tz_name = timezone_from_coordinates(lat, lon)
-
+def resolve_timezone(name: str | None = None, lat: float | None = None,
+                     lon: float | None = None):
+    """ZoneInfo for ``name`` (or looked up from lat/lon), or None for system local."""
+    tz_name = name or timezone_from_coordinates(lat, lon)
     if not tz_name or ZoneInfo is None:
         if name and ZoneInfo is None:
             print("[timezone] zoneinfo not available; using system local time")
-        _TZ = None
-        _TZ_NAME = None
-        return
-
+        return None
     try:
-        _TZ = ZoneInfo(tz_name)
-        _TZ_NAME = tz_name
+        return ZoneInfo(tz_name)
     except Exception:
         print(f"[timezone] unknown timezone '{tz_name}'; using system local time")
-        _TZ = None
-        _TZ_NAME = None
+        return None
+
+
+def set_timezone(name: str | None = None, lat: float | None = None, lon: float | None = None) -> None:
+    global _TZ, _TZ_NAME
+    _TZ = resolve_timezone(name, lat, lon)
+    _TZ_NAME = str(_TZ) if _TZ is not None else None
+
+
+#: A channel can show several locations, possibly in different timezones.
+#: Each location's data thread pins its own zone here (thread-local), while
+#: the render thread uses the process-wide zone, switched to whichever
+#: location is on screen (set_active_timezone).
+_THREAD_TZ = threading.local()
+_UNSET = object()
+
+
+def set_thread_timezone(tz) -> None:
+    """Pin the timezone used by to_local/now_local in the calling thread."""
+    _THREAD_TZ.tz = tz
+
+
+def set_active_timezone(tz) -> None:
+    """Process-wide timezone (the location currently on screen)."""
+    global _TZ, _TZ_NAME
+    _TZ = tz
+    _TZ_NAME = str(tz) if tz is not None else None
+
+
+def _current_tz():
+    tz = getattr(_THREAD_TZ, "tz", _UNSET)
+    return _TZ if tz is _UNSET else tz
 
 
 def local_tzinfo():
-    """The timezone configured by set_timezone(), or None for system local."""
-    return _TZ
+    """The timezone in effect for this thread, or None for system local."""
+    return _current_tz()
 
 
 def now_local() -> datetime:
-    if _TZ is not None:
-        return datetime.now(_TZ)
+    tz = _current_tz()
+    if tz is not None:
+        return datetime.now(tz)
     return datetime.now().astimezone()
 
 
@@ -208,8 +235,9 @@ def fmt_hour(dt: datetime) -> str:
 def to_local(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    if _TZ is not None:
-        return dt.astimezone(_TZ)
+    tz = _current_tz()
+    if tz is not None:
+        return dt.astimezone(tz)
     return dt.astimezone()
 
 
