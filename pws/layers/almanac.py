@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List
 
 from PIL import ImageDraw
 
-from pws import icons_anim, theme
+from pws import icons_anim, lang, theme
 from pws.core.layer import Layer
 
 #: Rows that get a coloured accent, keyed by label.
@@ -75,7 +75,7 @@ class AlmanacLayer(Layer):
         draw = ImageDraw.Draw(surface, "RGBA")
 
         if not rows:
-            draw.text((self.s(32), self.s(28)), "Almanac data unavailable",
+            draw.text((self.s(32), self.s(28)), lang.tr("Almanac data unavailable"),
                       font=theme.font(self.s(34, 12), "medium"), fill=theme.TEXT_MUTED)
             return self._mark_all_dirty_if_changed()
 
@@ -109,7 +109,7 @@ class AlmanacLayer(Layer):
 
             name = str(row.get("name") or "")
             value = str(row.get("value") or "--")
-            accent = _ACCENTS.get(name, theme.ACCENT)
+            accent = _ACCENTS.get(row.get("key") or "", theme.ACCENT)
 
             # Zebra striping for scannability.
             if slot % 2 == 0:
@@ -127,7 +127,7 @@ class AlmanacLayer(Layer):
             bar_h = max(self.s(20, 1), row_h - self.s(34))
             bar_x = x0 + self.s(14)
             moon_phase = row.get("moon_phase")
-            if name == "Moon Phase" and moon_phase is not None:
+            if row.get("key") == "Moon Phase" and moon_phase is not None:
                 moon_img = icons_anim.moon_phase_image(float(moon_phase), bar_h)
                 surface.alpha_composite(moon_img, (bar_x, int(centre - bar_h / 2)))
                 text_x = bar_x + bar_h + self.s(14)

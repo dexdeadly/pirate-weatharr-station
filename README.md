@@ -282,6 +282,7 @@ same forecast response, so there are no fields for them.
 | News Ticker Feeds | no | Comma-separated RSS/Atom URLs |
 | Auto-start Stations | no | On by default. Relaunch stations that were running after Dispatcharr restarts or the plugin updates |
 | Clock Format | no | Auto (12-hour for Imperial, 24-hour otherwise), 12-hour or 24-hour; applies to every time shown |
+| Language | no | On-screen text language: English (default) or Español. Changes the channel's labels, page titles and unit-adjacent text; the Pirate Weather API summaries and NWS alert text are served as provided |
 | Pages and Order | no | Comma-separated page names, in order; remove a name to hide that page. Blank shows all |
 | Seconds Per Page | no | 6–120, default 14 |
 

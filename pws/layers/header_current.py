@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict
 
 from PIL import ImageDraw
 
-from pws import layout, theme
+from pws import lang, layout, theme
 from pws.core.layer import Layer
 from pws.layers.anim_icons import AnimatedIconsMixin
 
@@ -69,7 +69,7 @@ class HeaderCurrentLayer(AnimatedIconsMixin, Layer):
         # Column label, on the shared baseline.
         label_font = theme.font(self.s(18, 8), "semibold")
         theme.tracked_center(draw, cx, self.s(layout.LABEL_Y) - self.bounds[1],
-                             "CURRENTLY", label_font, fill=theme.TEXT_DIM,
+                             lang.tr("CURRENTLY"), label_font, fill=theme.TEXT_DIM,
                              tracking=self.s(3, 1))
 
         body_y = self.s(layout.BODY_Y) - self.bounds[1]
@@ -96,7 +96,8 @@ class HeaderCurrentLayer(AnimatedIconsMixin, Layer):
         detail_font = theme.font(self.s(20, 8), "medium")
         detail = summary
         if feels and feels not in ("--°F", "--°C"):
-            detail = f"{summary} · Feels {feels}" if summary else f"Feels {feels}"
+            feels_label = lang.tr("Feels")
+            detail = f"{summary} · {feels_label} {feels}" if summary else f"{feels_label} {feels}"
         detail_y = body_y + theme.line_height(temp_font) - self.s(6)
         lines = theme.wrap(draw, detail, detail_font, w, max_lines=1)
         if lines:

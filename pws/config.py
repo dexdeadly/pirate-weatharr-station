@@ -81,6 +81,7 @@ class Config:
     # Provider
     api_key: str
     units: str
+    language: str
 
     # Location
     zip: str | None
@@ -145,6 +146,9 @@ def parse_args(argv: list[str] | None = None) -> Config:
     provider.add_argument("--units", type=str, default="us",
                           choices=("us", "si", "ca", "uk"),
                           help="Unit system; 'us' is Imperial (default)")
+    provider.add_argument("--lang", type=str, default="en",
+                          choices=("en", "es"),
+                          help="On-screen language; 'en' English (default), 'es' Spanish")
 
     loc = p.add_argument_group("Location")
     loc.add_argument("--zip", type=str, default=None, help="5-digit US ZIP code")
@@ -219,6 +223,7 @@ def parse_args(argv: list[str] | None = None) -> Config:
         locations=locations,
         api_key=api_key,
         units=args.units,
+        language=args.lang,
         zip=args.zip,
         lat=args.lat,
         lon=args.lon,

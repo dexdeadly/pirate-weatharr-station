@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List
 
 from PIL import ImageDraw
 
-from pws import theme
+from pws import lang, theme
 from pws.core.layer import Layer
 
 
@@ -59,7 +59,7 @@ class HourlyGraphLayer(Layer):
         draw = ImageDraw.Draw(surface, "RGBA")
 
         if not points:
-            draw.text((self.s(32), self.s(28)), "Hourly data unavailable",
+            draw.text((self.s(32), self.s(28)), lang.tr("Hourly data unavailable"),
                       font=theme.font(self.s(34, 12), "medium"), fill=theme.TEXT_MUTED)
             return self._mark_all_dirty_if_changed()
 
@@ -174,9 +174,9 @@ class HourlyGraphLayer(Layer):
 
     def _draw_legend(self, surface, draw, x: int, y: int) -> None:
         entries = (
-            ("Temperature", theme.AMBER),
-            ("Precip Chance", theme.PRECIP),
-            ("Cloud Cover", theme.CLOUD),
+            (lang.tr("Temperature"), theme.AMBER),
+            (lang.tr("Precip Chance"), theme.PRECIP),
+            (lang.tr("Cloud Cover"), theme.CLOUD),
         )
         font = theme.font(self.s(21, 9), "semibold")
         cursor = x

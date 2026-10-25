@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List
 
 from PIL import ImageDraw
 
-from pws import theme
+from pws import lang, theme
 from pws.core.layer import Layer
 from pws.layers.anim_icons import AnimatedIconsMixin
 
@@ -58,7 +58,7 @@ class DailyLayer(AnimatedIconsMixin, Layer):
         if not days:
             theme.card(surface, (0, 0, w, h), radius=self.s(theme.RADIUS_CARD, 1))
             draw = ImageDraw.Draw(surface, "RGBA")
-            draw.text((self.s(32), self.s(28)), "Forecast data unavailable",
+            draw.text((self.s(32), self.s(28)), lang.tr("Forecast data unavailable"),
                       font=theme.font(self.s(34, 12), "medium"), fill=theme.TEXT_MUTED)
             return
 
@@ -89,12 +89,12 @@ class DailyLayer(AnimatedIconsMixin, Layer):
         # Secondary elements shown on every card. Each entry is
         # (label, dict key, optional suffix key, accent colour).
         stat_rows = [
-            ("Precip", "precip_display", None, theme.PRECIP),
-            ("Humidity", "humidity_display", None, theme.CYAN),
-            ("Wind", "wind_display", "wind_unit", theme.LIME),
-            ("Gusts", "gust_display", "wind_unit", theme.LIME),
-            ("Cloud", "cloud_display", None, theme.CLOUD),
-            ("UV Index", "uv_display", None, theme.AMBER),
+            (lang.tr("Precip"), "precip_display", None, theme.PRECIP),
+            (lang.tr("Humidity"), "humidity_display", None, theme.CYAN),
+            (lang.tr("Wind"), "wind_display", "wind_unit", theme.LIME),
+            (lang.tr("Gusts"), "gust_display", "wind_unit", theme.LIME),
+            (lang.tr("Cloud"), "cloud_display", None, theme.CLOUD),
+            (lang.tr("UV Index"), "uv_display", None, theme.AMBER),
         ]
         stat_h = theme.line_height(stat_value_font) + self.s(10)
 
@@ -190,7 +190,7 @@ class DailyLayer(AnimatedIconsMixin, Layer):
                     break
                 value = str(day.get(key) or "--")
                 suffix = str(day.get(suffix_key) or "") if suffix_key else ""
-                if suffix and value not in ("--", "Calm"):
+                if suffix and value not in ("--", lang.tr("Calm")):
                     value = f"{value} {suffix}"
                 # Share one centre line so the differing font sizes stay level.
                 row_centre = cursor + stat_h / 2.0 - self.s(5)

@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from PIL import Image, ImageDraw
 
-from pws import theme
+from pws import lang, theme
 from pws.core.layer import Layer
 from pws.layers.anim_icons import AnimatedIconsMixin
 
@@ -141,7 +141,7 @@ class _MapLayerBase(AnimatedIconsMixin, Layer):
         )
 
         if not points:
-            draw.text((self.s(32), self.s(28)), self.empty_message,
+            draw.text((self.s(32), self.s(28)), lang.tr(self.empty_message),
                       font=theme.font(self.s(32, 12), "medium"), fill=theme.TEXT_MUTED)
             return
 

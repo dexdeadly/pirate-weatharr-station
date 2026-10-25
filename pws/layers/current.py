@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict
 
 from PIL import ImageDraw
 
-from pws import theme
+from pws import lang, theme
 from pws.core.layer import Layer
 from pws.layers.anim_icons import AnimatedIconsMixin
 
@@ -101,8 +101,8 @@ class CurrentLayer(AnimatedIconsMixin, Layer):
         meta_font = theme.font(self.s(27, 10), "medium")
         meta_y = sum_y + theme.line_height(sum_font) + self.s(6)
         theme.label(draw, (text_x, meta_y),
-                    f"Feels like {data.get('feels_display', '--')}  ·  "
-                    f"Wind {data.get('wind_display', '--')}",
+                    f"{lang.tr('Feels like')} {data.get('feels_display', '--')}  ·  "
+                    f"{lang.tr('Wind')} {data.get('wind_display', '--')}",
                     meta_font, fill=theme.TEXT_MUTED, tracking=self.s(1, 1))
 
         # ---- right rail: high / low / sun --------------------------------
@@ -114,14 +114,14 @@ class CurrentLayer(AnimatedIconsMixin, Layer):
 
         # ---- metric tiles ------------------------------------------------
         tiles = [
-            ("Humidity", data.get("humidity_display", "--"), theme.CYAN),
-            ("Dew Point", data.get("dew_display", "--"), theme.CYAN),
-            ("Pressure", data.get("pressure_display", "--"), theme.VIOLET),
-            ("Visibility", data.get("visibility_display", "--"), theme.VIOLET),
-            ("UV Index", data.get("uv_display", "--"), theme.AMBER),
-            ("Cloud Cover", data.get("cloud_display", "--"), theme.CLOUD),
-            ("Chance of Precip", data.get("precip_prob_display", "--"), theme.PRECIP),
-            ("Wind Gusts", data.get("gust_display", "--"), theme.LIME),
+            (lang.tr("Humidity"), data.get("humidity_display", "--"), theme.CYAN),
+            (lang.tr("Dew Point"), data.get("dew_display", "--"), theme.CYAN),
+            (lang.tr("Pressure"), data.get("pressure_display", "--"), theme.VIOLET),
+            (lang.tr("Visibility"), data.get("visibility_display", "--"), theme.VIOLET),
+            (lang.tr("UV Index"), data.get("uv_display", "--"), theme.AMBER),
+            (lang.tr("Cloud Cover"), data.get("cloud_display", "--"), theme.CLOUD),
+            (lang.tr("Chance of Precip"), data.get("precip_prob_display", "--"), theme.PRECIP),
+            (lang.tr("Wind Gusts"), data.get("gust_display", "--"), theme.LIME),
         ]
 
         grid_top = hero_h + self.s(24)
@@ -172,8 +172,8 @@ class CurrentLayer(AnimatedIconsMixin, Layer):
         half = (w - self.s(48)) // 2
         caption_font = theme.font(self.s(17, 8), "semibold")
         for offset, (name, key, fkey, pkey, color) in enumerate((
-            ("High", "high_display", "high_f", "high_period", theme.AMBER),
-            ("Low", "low_display", "low_f", "low_period", theme.CYAN),
+            (lang.tr("High"), "high_display", "high_f", "high_period", theme.AMBER),
+            (lang.tr("Low"), "low_display", "low_f", "low_period", theme.CYAN),
         )):
             cx = inner_x + offset * half
             theme.label(draw, (cx, cursor), name, label_font,
@@ -192,7 +192,10 @@ class CurrentLayer(AnimatedIconsMixin, Layer):
                         break
                 else:
                     # Small resolutions: abbreviate rather than collide.
-                    period = {"TOMORROW": "TMRW", "OVERNIGHT": "O'NIGHT"}.get(period, period)
+                    period = {
+                        "TOMORROW": "TMRW", "OVERNIGHT": "O'NIGHT",
+                        "MAÑANA": "MAÑ", "MADRUGADA": "MAD.",
+                    }.get(period, period)
                 theme.label(draw, (cx, cursor + self.s(24) + theme.line_height(value_font) + self.s(2)),
                             period, cap_font, fill=theme.TEXT_MUTED, tracking=cap_track)
 
@@ -205,8 +208,8 @@ class CurrentLayer(AnimatedIconsMixin, Layer):
         cursor += self.s(18)
 
         for name, key, color in (
-            ("Sunrise", "sunrise", theme.AMBER),
-            ("Sunset", "sunset", theme.ROSE),
+            (lang.tr("Sunrise"), "sunrise", theme.AMBER),
+            (lang.tr("Sunset"), "sunset", theme.ROSE),
         ):
             if cursor + self.s(56) > y + h:
                 break

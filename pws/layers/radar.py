@@ -10,7 +10,7 @@ from typing import Callable, List, Optional, Tuple
 
 from PIL import Image, ImageDraw
 
-from pws import theme
+from pws import lang, theme
 from pws.core.layer import Layer
 
 
@@ -95,7 +95,7 @@ class RadarLayer(Layer):
             theme.card(surface, (0, 0, surface.width, surface.height),
                        radius=self.s(theme.RADIUS_CARD, 1))
             draw = ImageDraw.Draw(surface, "RGBA")
-            draw.text((self.s(32), self.s(28)), "Acquiring radar imagery…",
+            draw.text((self.s(32), self.s(28)), lang.tr("Acquiring radar imagery…"),
                       font=theme.font(self.s(34, 12), "medium"), fill=theme.TEXT_MUTED)
             return self._mark_all_dirty_if_changed()
 
@@ -153,9 +153,9 @@ class RadarLayer(Layer):
         for i, color in enumerate(stops):
             draw.rectangle((x0 + i * bar_w, y0, x0 + (i + 1) * bar_w, y1),
                            fill=(*color, 235))
-        theme.label(draw, (x0, y0 - self.s(20)), "Light", font,
+        theme.label(draw, (x0, y0 - self.s(20)), lang.tr("Light"), font,
                     fill=theme.TEXT_DIM, tracking=self.s(1, 1))
-        theme.text_right(draw, (x1, y0 - self.s(20)), "HEAVY", font, fill=theme.TEXT_DIM)
+        theme.text_right(draw, (x1, y0 - self.s(20)), lang.tr("HEAVY"), font, fill=theme.TEXT_DIM)
 
     def _draw_source_badge(self, draw) -> None:
         """
@@ -177,7 +177,7 @@ class RadarLayer(Layer):
         name_font = theme.font(self.s(21, 9), "bold")
         pad = self.s(12, 2)
 
-        label_w = theme.tracked_width(draw, "RADAR", label_font, self.s(2, 1))
+        label_w = theme.tracked_width(draw, lang.tr("RADAR"), label_font, self.s(2, 1))
         name_w = theme.text_width(draw, source, name_font)
         box_w = pad * 2 + max(label_w, name_w)
         box_h = pad * 2 + theme.line_height(label_font) + theme.line_height(name_font)
@@ -189,7 +189,7 @@ class RadarLayer(Layer):
         draw.rectangle((x0, y0, x1, y1), fill=(8, 12, 24, 200),
                        outline=theme.with_alpha(theme.CARD_BORDER_STRONG, 150),
                        width=self.s(2, 1))
-        theme.tracked_text(draw, (x0 + pad, y0 + pad), "RADAR", label_font,
+        theme.tracked_text(draw, (x0 + pad, y0 + pad), lang.tr("RADAR"), label_font,
                            fill=theme.TEXT_DIM, tracking=self.s(2, 1))
         draw.text((x0 + pad, y0 + pad + theme.line_height(label_font)), source,
                   font=name_font, fill=theme.TEXT)

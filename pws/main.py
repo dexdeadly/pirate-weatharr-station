@@ -29,7 +29,7 @@ from typing import Callable, Iterable, Optional, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from pws import icons_anim, layout, logrotate, map_tiles, noaa_radar, normalize, regional, status, surf, theme
+from pws import icons_anim, lang, layout, logrotate, map_tiles, noaa_radar, normalize, regional, status, surf, theme
 from pws.nws_alerts import NWSAlertPoller
 from dataclasses import dataclass
 
@@ -533,12 +533,12 @@ def _ticker_parts(alerts: list[dict], headlines: list[str]) -> tuple[str, str]:
     """Return (text, category-label) for the ticker."""
     alert_text = normalize.alerts_ticker_text(alerts)
     if alerts and headlines:
-        return (f"{alert_text}  •  " + "  •  ".join(headlines), "ALERTS")
+        return (f"{alert_text}  •  " + "  •  ".join(headlines), lang.tr("ALERTS"))
     if alerts:
-        return (alert_text, "ALERTS")
+        return (alert_text, lang.tr("ALERTS"))
     if headlines:
-        return ("  •  ".join(headlines), "NEWS")
-    return (alert_text, "WEATHER")
+        return ("  •  ".join(headlines), lang.tr("NEWS"))
+    return (alert_text, lang.tr("WEATHER"))
 
 
 def _build_layers(cfg: Config, contexts: Sequence[LocationContext], render_w: int,
@@ -571,7 +571,8 @@ def _build_layers(cfg: Config, contexts: Sequence[LocationContext], render_w: in
         alerts = live_alerts()
         error = read("error")
         if error and not alerts:
-            return (f"Pirate Weather unavailable — {error}", "STATUS")
+            return (lang.tr("Pirate Weather unavailable — {error}", error=error),
+                    lang.tr("STATUS"))
         return _ticker_parts(alerts, list(read("headlines", []) or []))
 
     def content_bounds(top: int, bottom_extra: int = 24) -> tuple[int, int, int, int]:
@@ -667,26 +668,26 @@ def _build_layers(cfg: Config, contexts: Sequence[LocationContext], render_w: in
         layers.extend(page_layers)
         return page_layers
 
-    add_page("current", "Current Conditions", lambda b, c: [
+    add_page("current", lang.tr("Current Conditions"), lambda b, c: [
         CurrentLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                      get_data=lambda: read("current", {}) or {},
                      min_interval=5.0, scale=scale)
     ], top=layout.CONTENT_TOP)
 
-    add_page("hourly", "12-Hour Trend", lambda b, c: [
+    add_page("hourly", lang.tr("12-Hour Trend"), lambda b, c: [
         HourlyGraphLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                          get_points=lambda: read("hourly_points", []) or [],
                          min_interval=15.0, scale=scale)
     ], top=layout.CONTENT_TOP)
 
-    add_page("daily", "7-Day Forecast", lambda b, c: [
+    add_page("daily", lang.tr("7-Day Forecast"), lambda b, c: [
         DailyLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                    get_days=lambda: read("daily_days", []) or [],
                    min_interval=30.0, scale=scale)
     ], top=layout.CONTENT_TOP)
 
     if cfg.radar_source != "off":
-        add_page("radar", "Live Radar", lambda b, c: [
+        add_page("radar", lang.tr("Live Radar"), lambda b, c: [
             # Ticking every 0.25s with frame_hold=3 used to redo the full
             # composite (frame paste, mask, legend, badge, text) on every
             # tick even though the on-screen frame only advanced on every
@@ -702,7 +703,7 @@ def _build_layers(cfg: Config, contexts: Sequence[LocationContext], render_w: in
                        frame_hold=1, scale=scale)
         ], top=layout.CONTENT_TOP)
 
-    add_page("regional", "Regional Conditions", lambda b, c: [
+    add_page("regional", lang.tr("Regional Conditions"), lambda b, c: [
         RegionalLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                       get_points=lambda: read("regional_points", []) or [],
                       get_map=lambda: read("regional_map_image"),
@@ -710,7 +711,7 @@ def _build_layers(cfg: Config, contexts: Sequence[LocationContext], render_w: in
                       min_interval=20.0, scale=scale)
     ], top=layout.CONTENT_TOP)
 
-    add_page("forecast_map", "Forecast Highs", lambda b, c: [
+    add_page("forecast_map", lang.tr("Forecast Highs"), lambda b, c: [
         ForecastMapLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                          get_points=lambda: read("forecast_points", []) or [],
                          get_map=lambda: read("forecast_map_image"),
@@ -718,20 +719,20 @@ def _build_layers(cfg: Config, contexts: Sequence[LocationContext], render_w: in
                          min_interval=20.0, scale=scale)
     ], top=layout.CONTENT_TOP)
 
-    add_page("forecast_text", "Extended Forecast", lambda b, c: [
+    add_page("forecast_text", lang.tr("Extended Forecast"), lambda b, c: [
         ForecastTextLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                           get_periods=lambda: read("forecast_periods", []) or [],
                           min_interval=30.0, scale=scale)
     ], top=layout.CONTENT_TOP)
 
     if any(c.loc.has_surf for c in contexts):
-        add_page("surf", "Surf Report", lambda b, c: [
+        add_page("surf", lang.tr("Surf Report"), lambda b, c: [
             SurfLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                       get_report=lambda: read("surf_report", {}) or {},
                       min_interval=20.0, scale=scale)
         ], top=layout.CONTENT_TOP)
 
-    add_page("almanac", "Almanac", lambda b, c: [
+    add_page("almanac", lang.tr("Almanac"), lambda b, c: [
         AlmanacLayer(x=b[0], y=b[1], w=b[2], h=b[3],
                      get_rows=lambda: read("almanac_rows", []) or [],
                      min_interval=20.0, scale=scale)
@@ -876,6 +877,7 @@ def _build_music_playlist(cfg: Config) -> str | None:
 
 def main(argv: Optional[list[str]] = None) -> int:
     cfg = parse_args(argv)
+    lang.set_language(cfg.language)
     logrotate.start(os.environ.get("PWS_LOG_PATH"))
 
     if not cfg.api_key:

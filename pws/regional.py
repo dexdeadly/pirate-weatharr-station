@@ -17,7 +17,7 @@ from typing import Optional, Sequence
 
 import requests
 
-from pws import normalize
+from pws import lang, normalize
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 
@@ -60,7 +60,7 @@ def describe(code, is_day: bool = True) -> tuple[str, str]:
         summary, day_icon, night_icon = _WMO[int(code)]
     except (KeyError, TypeError, ValueError):
         return ("", "clear-day" if is_day else "clear-night")
-    return (summary, day_icon if is_day else night_icon)
+    return (lang.tr(summary), day_icon if is_day else night_icon)
 
 
 def fetch(targets: Sequence[dict], units: "normalize.Units", user_agent: str,

@@ -13,7 +13,7 @@ from typing import Any, Callable, Dict, Optional
 
 from PIL import ImageDraw
 
-from pws import theme
+from pws import lang, theme
 from pws.core.layer import Layer
 
 _RATING_COLORS = {
@@ -81,7 +81,7 @@ class SurfLayer(Layer):
                        gradient_to=theme.CARD_FILL_SUNKEN, border=theme.CARD_BORDER,
                        border_width=self.s(2, 1))
             draw = ImageDraw.Draw(surface, "RGBA")
-            message = report.get("message") or "Surf report loading..."
+            message = lang.tr(report.get("message") or "Surf report loading...")
             draw.text((self.s(32), self.s(28)), message,
                       font=theme.font(self.s(32, 12), "medium"), fill=theme.TEXT_MUTED)
             return self._mark_all_dirty_if_changed()
@@ -111,7 +111,7 @@ class SurfLayer(Layer):
         draw = self._panel(surface, box)
         pad = self.s(30)
         label_font = theme.font(self.s(20, 8), "semibold")
-        theme.label(draw, (x0 + pad, y0 + pad), "ESTIMATED SURF", label_font,
+        theme.label(draw, (x0 + pad, y0 + pad), lang.tr("ESTIMATED SURF"), label_font,
                     fill=theme.TEXT_DIM, tracking=self.s(3, 1))
         spot = str(report.get("spot") or "").upper()
         if spot:
@@ -132,12 +132,15 @@ class SurfLayer(Layer):
 
         rating = str(report.get("rating") or "--")
         ry = by + theme.line_height(big) + self.s(10)
-        theme.badge(surface, draw, (x0 + pad, ry), rating, scale=self.scale * 1.3,
+        theme.badge(surface, draw, (x0 + pad, ry), lang.tr(rating),
+                    scale=self.scale * 1.3,
                     fill=_RATING_COLORS.get(rating, theme.ACCENT))
 
         detail_font = theme.font(self.s(24, 9), "medium")
-        detail = (f"Waves {report.get('wave_height', '--')} @ "
-                  f"{report.get('wave_period', '--')} {report.get('wave_dir', '')}")
+        detail = lang.tr("Waves {h} @ {p} {d}",
+                         h=report.get('wave_height', '--'),
+                         p=report.get('wave_period', '--'),
+                         d=report.get('wave_dir', ''))
         draw.text((x0 + pad, y1 - pad - theme.line_height(detail_font)), detail,
                   font=detail_font, fill=theme.TEXT_MUTED)
 
@@ -146,15 +149,15 @@ class SurfLayer(Layer):
         swells = list(report.get("swells") or [])
         tiles = []
         for swell in swells[:2]:
-            tiles.append((f"{swell['label']} Swell",
+            tiles.append((lang.tr(f"{swell['label']} Swell"),
                           f"{swell['height']} {swell['period']}",
                           swell["dir"], swell.get("deg"), theme.CYAN))
         while len(tiles) < 2:
-            tiles.append(("Swell", "--", "", None, theme.CYAN))
+            tiles.append((lang.tr("Swell"), "--", "", None, theme.CYAN))
         wind = str(report.get("wind") or "--")
         gust = str(report.get("wind_gust") or "")
-        tiles.append(("Wind", wind, gust, None, theme.CLOUD))
-        tiles.append(("Water Temp", str(report.get("water_temp") or "--"), "", None, theme.PRECIP))
+        tiles.append((lang.tr("Wind"), wind, gust, None, theme.CLOUD))
+        tiles.append((lang.tr("Water Temp"), str(report.get("water_temp") or "--"), "", None, theme.PRECIP))
 
         gap = self.s(16, 1)
         tw = ((x1 - x0) - gap) // 2
@@ -188,15 +191,16 @@ class SurfLayer(Layer):
         draw = self._panel(surface, box)
         pad = self.s(28)
         label_font = theme.font(self.s(20, 8), "semibold")
-        theme.label(draw, (x0 + pad, y0 + pad), "TIDES", label_font,
+        theme.label(draw, (x0 + pad, y0 + pad), lang.tr("TIDES"), label_font,
                     fill=theme.TEXT_DIM, tracking=self.s(3, 1))
         tides = list(report.get("tides") or [])
         if not tides:
             msg_font = theme.font(self.s(24, 9), "medium")
             y = y0 + pad + self.s(44)
-            for line in theme.wrap(draw, "No NOAA tide station near this spot "
-                                   "(tide predictions cover US coasts only).",
-                                   msg_font, (x1 - x0) - pad * 2, max_lines=4):
+            for line in theme.wrap(draw, lang.tr(
+                    "No NOAA tide station near this spot "
+                    "(tide predictions cover US coasts only)."),
+                    msg_font, (x1 - x0) - pad * 2, max_lines=4):
                 draw.text((x0 + pad, y), line, font=msg_font, fill=theme.TEXT_MUTED)
                 y += theme.line_height(msg_font) + self.s(4)
             return
@@ -213,7 +217,7 @@ class SurfLayer(Layer):
             cy = list_top + row_h * i + row_h / 2
             high = tide.get("kind") == "HIGH"
             color = theme.PRECIP if high else theme.TEXT_MUTED
-            kind = tide.get("kind", "")
+            kind = lang.tr(tide.get("kind", ""))
             draw.text((x0 + pad, theme.top_for_center(kind_font, cy)), kind,
                       font=kind_font, fill=color)
             when = tide.get("time", "--")
@@ -234,7 +238,7 @@ class SurfLayer(Layer):
         draw = self._panel(surface, box)
         pad = self.s(28)
         label_font = theme.font(self.s(20, 8), "semibold")
-        theme.label(draw, (x0 + pad, y0 + pad), "5-DAY WAVE OUTLOOK", label_font,
+        theme.label(draw, (x0 + pad, y0 + pad), lang.tr("5-DAY WAVE OUTLOOK"), label_font,
                     fill=theme.TEXT_DIM, tracking=self.s(3, 1))
         src_font = theme.font(self.s(18, 8), "medium")
         theme.text_right(draw, (x1 - pad, y0 + pad), str(report.get("source") or ""),
@@ -275,5 +279,5 @@ class SurfLayer(Layer):
             theme.text_center(draw, cx, by0 - self.s(10) - theme.line_height(meta_font)
                               - theme.line_height(rng_font),
                               f"{day.get('range', '--')} {unit}", rng_font, fill=theme.TEXT)
-            theme.text_center(draw, cx, names_y, str(day.get("name") or ""), name_font,
+            theme.text_center(draw, cx, names_y, lang.tr(str(day.get("name") or "")), name_font,
                               fill=theme.TEXT_DIM)

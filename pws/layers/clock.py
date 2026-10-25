@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from PIL import ImageDraw
 
-from pws import layout, theme
+from pws import lang, layout, theme
 from pws.core.layer import Layer
-from pws.utils import clock_24h, now_local
+from pws.utils import clock_24h, full_date, now_local
 
 
 class ClockLayer(Layer):
@@ -43,7 +43,7 @@ class ClockLayer(Layer):
         else:
             time_str, ampm = dt.strftime("%I:%M").lstrip("0"), dt.strftime("%p")
         secs_str = dt.strftime("%S")
-        date_str = dt.strftime("%A, %B %d").replace(" 0", " ")
+        date_str = full_date(dt).replace(" 0", " ")
 
         state = (time_str, secs_str, ampm, date_str)
         if state == self._state:
@@ -61,7 +61,7 @@ class ClockLayer(Layer):
         # Column label, on the shared baseline.
         label_font = theme.font(self.s(18, 8), "semibold")
         theme.tracked_center(draw, cx, self.s(layout.LABEL_Y) - self.bounds[1],
-                             "LOCAL TIME", label_font, fill=theme.TEXT_DIM,
+                             lang.tr("LOCAL TIME"), label_font, fill=theme.TEXT_DIM,
                              tracking=self.s(3, 1))
 
         body_y = self.s(layout.BODY_Y) - self.bounds[1]

@@ -23,7 +23,8 @@ from typing import Any, Optional
 
 import requests
 
-from pws.utils import fmt_time, local_tzinfo
+from pws import lang
+from pws.utils import fmt_time, local_tzinfo, weekday_abbr
 
 MARINE_URL = "https://marine-api.open-meteo.com/v1/marine"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -47,6 +48,8 @@ MAX_TIDE_STATION_MILES = 60.0
 
 _COMPASS = ("N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
             "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW")
+_COMPASS_ES = ("N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+               "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO")
 
 
 def compass(degrees: Any) -> str:
@@ -54,7 +57,8 @@ def compass(degrees: Any) -> str:
         value = float(degrees)
     except (TypeError, ValueError):
         return "--"
-    return _COMPASS[int((value % 360) / 22.5 + 0.5) % 16]
+    table = _COMPASS_ES if lang.current() == "es" else _COMPASS
+    return table[int((value % 360) / 22.5 + 0.5) % 16]
 
 
 def _miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -346,7 +350,7 @@ def build_report(client: SurfClient, spot_name: str) -> dict:
         h = _num((daily.get("wave_height_max") or [None] * 9)[i])
         p = _num((daily.get("swell_wave_period_max") or [None] * 9)[i])
         try:
-            name = datetime.strptime(day, "%Y-%m-%d").strftime("%a").upper()
+            name = weekday_abbr(datetime.strptime(day, "%Y-%m-%d")).upper()
         except ValueError:
             name = day
         r = surf_range(h, p)
@@ -371,7 +375,7 @@ def build_report(client: SurfClient, spot_name: str) -> dict:
             upcoming.append({
                 "kind": "HIGH" if pred.get("type") == "H" else "LOW",
                 "time": label,
-                "day": "" if dt.date() == now.date() else dt.strftime("%a").upper(),
+                "day": "" if dt.date() == now.date() else weekday_abbr(dt).upper(),
                 "height": f"{height:.1f} {len_unit}" if height is not None else "--",
             })
         report["tides"] = upcoming[:4]
