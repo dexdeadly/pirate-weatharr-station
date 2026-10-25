@@ -7,7 +7,7 @@ from typing import Callable, Optional, Sequence
 
 from PIL import ImageDraw
 
-from pws import normalize, theme
+from pws import lang, normalize, theme
 from pws.core.layer import Layer
 from pws.utils import fmt_time, to_local
 
@@ -118,7 +118,7 @@ class AlertBarLayer(Layer):
         badge_h_est = self.s(36, 1)
         badge_w, _ = theme.badge(
             surface, draw, (pad, (h - badge_h_est) // 2),
-            _LEVEL_LABEL.get(level, "NO DATA"), scale=self.scale, fill=color,
+            lang.tr(_LEVEL_LABEL.get(level, "NO DATA")), scale=self.scale, fill=color,
         )
         text_x = pad + badge_w + self.s(18)
         right = w - pad
@@ -129,7 +129,8 @@ class AlertBarLayer(Layer):
         if freshness:
             stamp, stale = freshness
             fresh_font = theme.font(self.s(19, 8), "semibold")
-            text_f = f"DATA DELAYED · {stamp}" if stale else f"UPDATED {stamp}"
+            text_f = (lang.tr("DATA DELAYED · {stamp}", stamp=stamp) if stale
+                      else lang.tr("UPDATED {stamp}", stamp=stamp))
             fw = theme.tracked_width(draw, text_f, fresh_font, self.s(1, 1))
             theme.tracked_text(
                 draw, (right - fw, theme.top_for_center(fresh_font, h / 2)), text_f,
@@ -140,7 +141,7 @@ class AlertBarLayer(Layer):
 
         if count > 1:
             counter_font = theme.font(self.s(20, 8), "semibold")
-            counter = f"{index + 1} OF {count}"
+            counter = lang.tr("{i} OF {n}", i=index + 1, n=count)
             cw = theme.tracked_width(draw, counter, counter_font, self.s(2, 1))
             theme.tracked_text(
                 draw, (right - cw, theme.top_for_center(counter_font, h / 2)),
@@ -152,16 +153,16 @@ class AlertBarLayer(Layer):
             text = str(alert.get("title") or "").split(" issued ")[0].strip()
             expires = alert.get("expires")
             if expires and expires != "--":
-                text = f"{text}  ·  until {expires}"
+                text = f"{text}  ·  {lang.tr('until {when}', when=expires)}"
             regions = str(alert.get("regions") or "").strip()
             if regions:
                 text = f"{text}  ·  {regions}"
             fill = theme.TEXT
         elif error:
-            text = "Alert status unavailable - weather data could not be refreshed"
+            text = lang.tr("Alert status unavailable - weather data could not be refreshed")
             fill = theme.TEXT_MUTED
         else:
-            text = "No active weather alerts for this area"
+            text = lang.tr("No active weather alerts for this area")
             fill = theme.TEXT_MUTED
 
         font = theme.font(self.s(26, 10), "semibold")

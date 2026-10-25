@@ -71,6 +71,23 @@
       "help_text": "12- or 24-hour times on screen: clock, sun times, tides, alerts, radar."
     },
     {
+      "id": "language",
+      "label": "Language",
+      "type": "select",
+      "default": "en",
+      "options": [
+        {
+          "value": "en",
+          "label": "English"
+        },
+        {
+          "value": "es",
+          "label": "Español"
+        }
+      ],
+      "help_text": "Language for all on-screen text on the channel."
+    },
+    {
       "id": "resolution",
       "label": "Resolution",
       "type": "select",

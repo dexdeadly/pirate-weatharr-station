@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List
 
 from PIL import ImageDraw
 
-from pws import theme
+from pws import lang, theme
 from pws.core.layer import Layer
 from pws.layers.anim_icons import AnimatedIconsMixin
 
@@ -58,7 +58,7 @@ class ForecastTextLayer(AnimatedIconsMixin, Layer):
         if not periods:
             theme.card(surface, (0, 0, w, h), radius=self.s(theme.RADIUS_CARD, 1))
             draw = ImageDraw.Draw(surface, "RGBA")
-            draw.text((self.s(32), self.s(28)), "No forecast available",
+            draw.text((self.s(32), self.s(28)), lang.tr("No forecast available"),
                       font=theme.font(self.s(34, 12), "medium"), fill=theme.TEXT_MUTED)
             return
 
@@ -117,14 +117,14 @@ class ForecastTextLayer(AnimatedIconsMixin, Layer):
         # Stat grid: two rows of four, covering every element the daily block
         # exposes beyond the headline temperatures.
         stats = [
-            ("Wind", f"{period.get('wind_dir', '')} {period.get('wind', '--')}".strip()),
-            ("Gusts", str(period.get("gust") or "--")),
-            ("Precip", self._pct(period.get("precip"))),
-            ("Humidity", str(period.get("humidity") or "--")),
-            ("Dew Point", str(period.get("dew") or "--")),
-            ("Cloud", str(period.get("cloud") or "--")),
-            ("UV Index", str(period.get("uv") or "--")),
-            ("Pressure", str(period.get("pressure") or "--")),
+            (lang.tr("Wind"), f"{period.get('wind_dir', '')} {period.get('wind', '--')}".strip()),
+            (lang.tr("Gusts"), str(period.get("gust") or "--")),
+            (lang.tr("Precip"), self._pct(period.get("precip"))),
+            (lang.tr("Humidity"), str(period.get("humidity") or "--")),
+            (lang.tr("Dew Point"), str(period.get("dew") or "--")),
+            (lang.tr("Cloud"), str(period.get("cloud") or "--")),
+            (lang.tr("UV Index"), str(period.get("uv") or "--")),
+            (lang.tr("Pressure"), str(period.get("pressure") or "--")),
         ]
         stat_label = theme.font(self.s(17, 8), "semibold")
         stat_value = theme.font(self.s(24, 10), "bold")
@@ -144,15 +144,15 @@ class ForecastTextLayer(AnimatedIconsMixin, Layer):
         extras = []
         feels_high = str(period.get("feels_high") or "").strip()
         if feels_high and feels_high != "--°":
-            extras.append(f"Feels like {feels_high} / {period.get('feels_low', '--°')}")
+            extras.append(f"{lang.tr('Feels like')} {feels_high} / {period.get('feels_low', '--°')}")
         accumulation = str(period.get("accumulation") or "--").strip()
         if accumulation and accumulation != "--":
             ptype = str(period.get("precip_type") or "").strip()
             ptype = "" if ptype.lower() in ("none", "") else f"{ptype} "
-            extras.append(f"{ptype}accumulation {accumulation}")
+            extras.append(f"{ptype}{lang.tr('accumulation')} {accumulation}")
         visibility = str(period.get("visibility") or "--").strip()
         if visibility and visibility != "--":
-            extras.append(f"Visibility {visibility}")
+            extras.append(f"{lang.tr('Visibility')} {visibility}")
         if extras:
             theme.label(draw, (x0 + pad, cursor), "  ·  ".join(extras), extra_font,
                         fill=theme.TEXT_MUTED, tracking=self.s(1, 1))
@@ -177,7 +177,7 @@ class ForecastTextLayer(AnimatedIconsMixin, Layer):
         foot_y = y1 - self.s(38)
         if foot_y > cursor:
             theme.label(draw, (x0 + pad, foot_y),
-                        f"Sunrise {period.get('sunrise', '--')}", foot_font,
+                        f"{lang.tr('Sunrise')} {period.get('sunrise', '--')}", foot_font,
                         fill=theme.AMBER, tracking=self.s(1, 1))
             moon = str(period.get("moon_phase") or "").strip()
             if moon and moon != "--":
@@ -187,7 +187,7 @@ class ForecastTextLayer(AnimatedIconsMixin, Layer):
                                    moon.upper(), mid_font, fill=theme.VIOLET,
                                    tracking=self.s(1, 1))
             theme.text_right(draw, (x1 - pad, foot_y),
-                             f"SUNSET {period.get('sunset', '--')}".upper(),
+                             f"{lang.tr('Sunset')} {period.get('sunset', '--')}".upper(),
                              foot_font, fill=theme.ROSE)
 
     @staticmethod

@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 import requests
 
-from pws import normalize
+from pws import lang, normalize
 
 ALERTS_URL = "https://api.weather.gov/alerts/active"
 PROJECT_URL = "https://github.com/dexdeadly/pirate-weatharr-station"
@@ -49,9 +49,9 @@ def normalize_feature(props: dict) -> Optional[dict]:
     title = str(props.get("headline") or event).strip()
     if not title:
         return None
-    severity = str(props.get("severity") or "Unknown").title()
+    severity = str(props.get("severity") or lang.tr("Unknown")).title()
     areas = [a.strip() for a in str(props.get("areaDesc") or "").split(";") if a.strip()]
-    regions = ", ".join(areas[:MAX_AREAS]) + (" and more" if len(areas) > MAX_AREAS else "")
+    regions = ", ".join(areas[:MAX_AREAS]) + (lang.tr(" and more") if len(areas) > MAX_AREAS else "")
     return {
         "title": title,
         "severity": severity,

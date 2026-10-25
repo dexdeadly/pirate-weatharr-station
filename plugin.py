@@ -158,6 +158,11 @@ _CLOCK_FORMATS = [
     {"value": "24", "label": "24-hour (14:05)"},
 ]
 
+_LANGUAGES = [
+    {"value": "en", "label": "English"},
+    {"value": "es", "label": "Español"},
+]
+
 _UNITS = [
     {"value": "us", "label": "Imperial (°F, mph, mi)"},
     {"value": "ca", "label": "Metric (°C, km/h, km)"},
@@ -201,6 +206,14 @@ _SHARED_FIELDS: list[dict[str, Any]] = [
         "default": "auto",
         "options": _CLOCK_FORMATS,
         "help_text": "12- or 24-hour times on screen: clock, sun times, tides, alerts, radar.",
+    },
+    {
+        "id": "language",
+        "label": "Language",
+        "type": "select",
+        "default": "en",
+        "options": _LANGUAGES,
+        "help_text": "Language for all on-screen text on the channel.",
     },
     {
         "id": "resolution",
@@ -1200,6 +1213,7 @@ class Plugin:
             # regrouping stations or editing any of them relaunches it.
             "locations": locations or [self._station_location(settings, idx)],
             "units": settings.get("units") or "us",
+            "lang": settings.get("language") or "en",
             "clock": self._clock_format(settings),
             "pages": self._page_order(settings),
             "page_seconds": self._page_seconds(settings),
@@ -1707,6 +1721,7 @@ class Plugin:
             cmd += ["--lat", f"{coords[0]:.6f}", "--lon", f"{coords[1]:.6f}"]
         cmd += [
             "--units", (settings.get("units") or "us"),
+            "--lang", (settings.get("language") or "en"),
             "--clock", self._clock_format(settings),
             "--pages", self._page_order(settings),
             "--page-seconds", str(self._page_seconds(settings)),

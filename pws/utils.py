@@ -19,6 +19,8 @@ except ImportError:  # pragma: no cover
     ZoneInfo = None  # type: ignore
 from typing import Iterable, Optional, Tuple
 
+from pws import lang
+
 
 def c_to_f(value: Optional[float]) -> Optional[float]:
     if value is None:
@@ -65,8 +67,69 @@ def format_cardinal(degrees: Optional[float]) -> str:
         "S", "SSW", "SW", "WSW",
         "W", "WNW", "NW", "NNW",
     ]
+    dirs_es = [
+        "N", "NNE", "NE", "ENE",
+        "E", "ESE", "SE", "SSE",
+        "S", "SSO", "SO", "OSO",
+        "O", "ONO", "NO", "NNO",
+    ]
     idx = int((degrees % 360) / 22.5 + 0.5) % 16
-    return dirs[idx]
+    return (dirs_es if lang.current() == "es" else dirs)[idx]
+
+
+#: Spanish weekday / month names for locale-free date formatting. Python's
+#: ``strftime`` is bound to the C locale unless a Spanish locale is installed,
+#: which containers often lack, so these are mapped by hand.
+_WEEKDAYS_ES = ("lunes", "martes", "miércoles", "jueves", "viernes",
+                "sábado", "domingo")
+_WEEKDAYS_ABBR_ES = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
+_MONTHS_ES = ("enero", "febrero", "marzo", "abril", "mayo", "junio",
+              "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+_MONTHS_ABBR_ES = ("ene", "feb", "mar", "abr", "may", "jun",
+                   "jul", "ago", "sep", "oct", "nov", "dic")
+
+
+def weekday_full(dt: datetime) -> str:
+    if lang.current() == "es":
+        return _WEEKDAYS_ES[dt.weekday()]
+    return dt.strftime("%A")
+
+
+def weekday_abbr(dt: datetime) -> str:
+    if lang.current() == "es":
+        return _WEEKDAYS_ABBR_ES[dt.weekday()]
+    return dt.strftime("%a")
+
+
+def month_full(dt: datetime) -> str:
+    if lang.current() == "es":
+        return _MONTHS_ES[dt.month - 1]
+    return dt.strftime("%B")
+
+
+def month_abbr(dt: datetime) -> str:
+    if lang.current() == "es":
+        return _MONTHS_ABBR_ES[dt.month - 1]
+    return dt.strftime("%b")
+
+
+def month_day(dt: datetime) -> str:
+    """'Oct 2' (English) or 'oct 2' (Spanish), without the glibc-only %-d."""
+    return f"{month_abbr(dt)} {dt.day}"
+
+
+def full_date(dt: datetime) -> str:
+    """'Thursday, October 2' / 'jueves, 2 de octubre'."""
+    if lang.current() == "es":
+        return f"{weekday_full(dt)}, {dt.day} de {month_full(dt)}"
+    return f"{weekday_full(dt)}, {month_full(dt)} {dt.day}"
+
+
+def meridiem(dt: datetime) -> str:
+    """'AM'/'PM' (English) or 'a. m.'/'p. m.' (Spanish)."""
+    if lang.current() == "es":
+        return "a. m." if dt.hour < 12 else "p. m."
+    return dt.strftime("%p")
 
 
 def compute_heat_index(temp_f: Optional[float], humidity: Optional[float]) -> Optional[float]:
@@ -222,13 +285,15 @@ def fmt_time(dt: datetime) -> str:
     """'2:05 PM' (12-hour) or '14:05' (24-hour)."""
     if _CLOCK_24H:
         return dt.strftime("%H:%M")
-    return dt.strftime("%I:%M %p").lstrip("0")
+    return f"{dt.strftime('%I:%M').lstrip('0')} {meridiem(dt)}"
 
 
 def fmt_hour(dt: datetime) -> str:
     """Compact hour for axis labels: '2P' (12-hour) or '14' (24-hour)."""
     if _CLOCK_24H:
         return dt.strftime("%H")
+    if lang.current() == "es":
+        return (dt.strftime("%I").lstrip("0") or "12") + ("a" if dt.hour < 12 else "p")
     return (dt.strftime("%I").lstrip("0") or "12") + dt.strftime("%p")[0]
 
 

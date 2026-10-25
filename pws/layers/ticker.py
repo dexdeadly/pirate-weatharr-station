@@ -9,7 +9,7 @@ from typing import Callable, Optional
 
 from PIL import Image, ImageDraw
 
-from pws import theme
+from pws import lang, theme
 from pws.core.layer import Layer
 
 
@@ -126,7 +126,7 @@ class TickerLayer(Layer):
     # -- render -----------------------------------------------------------
 
     def tick(self, now: float):
-        text = str(self._safe(self.get_text, "")).strip() or "Weather data loading…"
+        text = str(self._safe(self.get_text, "")).strip() or lang.tr("Weather data loading…")
         if text != self._last_text or self._strip is None:
             self._last_text = text
             self._build_strip(text)
@@ -135,7 +135,7 @@ class TickerLayer(Layer):
         surface.paste((0, 0, 0, 0), (0, 0, *surface.size))
 
         accent = self._safe(self.get_accent, theme.ACCENT)
-        cap_text = str(self._safe(self.get_label, "WEATHER")).upper()
+        cap_text = str(self._safe(self.get_label, lang.tr("WEATHER"))).upper()
         cap_state = (cap_text, tuple(accent), surface.height)
         if cap_state != self._cap_state or self._cap_img is None:
             self._cap_state = cap_state

@@ -16,7 +16,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone as dt_timezone
 from typing import Any, Iterable, Optional, Sequence
 
-from pws.utils import fmt_hour, fmt_time, format_cardinal, safe_round, to_local
+from pws import lang
+from pws.utils import (fmt_hour, fmt_time, format_cardinal, month_day,
+                       safe_round, to_local, weekday_abbr, weekday_full)
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +142,7 @@ def until_label(epoch: Any) -> str:
         return "--"
     text = fmt_time(dt)
     if dt.date() != datetime.now(dt.tzinfo).date():
-        text = f"{dt.strftime('%a')} {text}"
+        text = f"{weekday_abbr(dt)} {text}"
     return text
 
 
@@ -230,11 +232,19 @@ def icon_key(raw: Any, is_day: bool = True) -> str:
 def summary_text(raw: Any, fallback: str = "Current conditions") -> str:
     text = str(raw or "").strip()
     if not text:
-        return fallback
+        return lang.tr(fallback)
     # Some payloads echo the icon slug (e.g. "clear-night") as the summary.
     if "-" in text and " " not in text:
         return text.replace("-", " ").title()
     return text
+
+
+def precip_type_label(raw: Any) -> str:
+    """Localise a machine-readable Pirate Weather precipType value."""
+    key = str(raw or "").strip().lower()
+    if key in ("", "none"):
+        return ""
+    return lang.tr(key) if key in ("rain", "snow", "sleet", "hail", "ice") else key.title()
 
 
 # ---------------------------------------------------------------------------
@@ -270,11 +280,11 @@ def _high_low_pair(payload: dict, units: Units) -> dict:
 
     if hour >= EVENING_HOUR:
         high_day = days[1] if len(days) > 1 else {}
-        high_label, low_label = "Tomorrow's High", "Tonight's Low"
+        high_period, low_period = "Tomorrow", "Tonight"
         low = _num((days[0] if days else {}).get("temperatureLow"))
     elif hour < DAY_START_HOUR:
         high_day = days[0] if days else {}
-        high_label, low_label = "Today's High", "Overnight Low"
+        high_period, low_period = "Today", "Overnight"
         overnight = [_num(cur.get("temperature"))]
         for entry in (payload.get("hourly") or {}).get("data") or []:
             when = _local_dt(entry.get("time"))
@@ -287,16 +297,16 @@ def _high_low_pair(payload: dict, units: Units) -> dict:
         low = min(values) if values else None
     else:
         high_day = days[0] if days else {}
-        high_label, low_label = "Today's High", "Tonight's Low"
+        high_period, low_period = "Today", "Tonight"
         low = _num((days[0] if days else {}).get("temperatureLow"))
 
     high = _num(high_day.get("temperatureHigh"))
     return {
-        "high_label": high_label,
-        "low_label": low_label,
+        "high_label": lang.tr(f"{high_period}'s High"),
+        "low_label": lang.tr(f"{low_period}'s Low"),
         # Just the period word, for captions under the values.
-        "high_period": high_label.split("'")[0].split()[0],
-        "low_period": low_label.split("'")[0].split()[0],
+        "high_period": lang.tr(high_period),
+        "low_period": lang.tr(low_period),
         "high_display": _deg(high, units),
         "low_display": _deg(low, units),
         "high_f": to_fahrenheit(high, units),
@@ -319,7 +329,7 @@ def build_current(payload: dict, units: Units, location_name: str) -> dict:
     gust = _num(cur.get("windGust"))
     wind_dir = format_cardinal(_num(cur.get("windBearing")))
     if wind_speed is None or wind_speed < 0.5:
-        wind_display = "Calm"
+        wind_display = lang.tr("Calm")
     else:
         wind_display = f"{wind_dir} {wind_speed:.0f} {units.wind}"
         if gust and gust > wind_speed * 1.3:
@@ -407,11 +417,11 @@ def build_daily_days(payload: dict, units: Units, limit: int = 7) -> list[dict]:
     for idx, entry in enumerate(rows[: max(1, int(limit))]):
         dt = _local_dt(entry.get("time"))
         if idx == 0:
-            name = "TODAY"
+            name = lang.tr("TODAY")
         elif dt:
-            name = dt.strftime("%a").upper()
+            name = weekday_abbr(dt).upper()
         else:
-            name = f"DAY {idx + 1}"
+            name = lang.tr("DAY {n}", n=idx + 1)
         high = _num(entry.get("temperatureHigh"))
         low = _num(entry.get("temperatureLow"))
         precip = _num(entry.get("precipProbability"))
@@ -426,7 +436,7 @@ def build_daily_days(payload: dict, units: Units, limit: int = 7) -> list[dict]:
         out.append(
             {
                 "name": name,
-                "date": dt.strftime("%b %-d") if dt else "",
+                "date": month_day(dt) if dt else "",
                 # Raw values drive colour ramps and the range bars.
                 "high": high,
                 "low": low,
@@ -442,7 +452,7 @@ def build_daily_days(payload: dict, units: Units, limit: int = 7) -> list[dict]:
                 "precip_display": _pct(entry.get("precipProbability")),
                 "humidity_display": _pct(entry.get("humidity")),
                 "wind_display": (
-                    "Calm" if wind is None or wind < 0.5
+                    lang.tr("Calm") if wind is None or wind < 0.5
                     else f"{format_cardinal(_num(entry.get('windBearing')))} {wind:.0f}"
                 ),
                 "wind_unit": units.wind,
@@ -484,11 +494,11 @@ def build_forecast_periods(payload: dict, units: Units, limit: int = 2) -> list[
     for idx, entry in enumerate(rows[first: first + max(1, int(limit))], start=first):
         dt = _local_dt(entry.get("time"))
         if idx == 0:
-            name = "Today"
+            name = lang.tr("Today")
         elif idx == 1:
-            name = "Tomorrow"
+            name = lang.tr("Tomorrow")
         else:
-            name = dt.strftime("%A") if dt else f"Day {idx + 1}"
+            name = weekday_full(dt) if dt else lang.tr("DAY {n}", n=idx + 1)
         wind = _num(entry.get("windSpeed"))
         gust = _num(entry.get("windGust"))
         precip = _num(entry.get("precipProbability"))
@@ -503,9 +513,7 @@ def build_forecast_periods(payload: dict, units: Units, limit: int = 2) -> list[
                 "wind_dir": format_cardinal(_num(entry.get("windBearing"))),
                 "gust": "--" if gust is None else f"{gust:.0f} {units.wind}",
                 "precip": None if precip is None else precip * 100.0,
-                "precip_type": (
-                    str(entry.get("precipType") or "none").title()
-                ),
+                "precip_type": precip_type_label(entry.get("precipType")),
                 "accumulation": _accumulation(entry, units),
                 "humidity": _pct(entry.get("humidity")),
                 "dew": _deg_unit(entry.get("dewPoint"), units),
@@ -546,11 +554,11 @@ def _narrative(day: dict, units: Units) -> str:
     low = _num(day.get("temperatureLow"))
     if high is not None and low is not None:
         parts.append(
-            f"Highs near {int(round(high))}°{units.temp} with overnight lows "
-            f"around {int(round(low))}°{units.temp}."
+            lang.tr("Highs near {h}°{u} with overnight lows around {l}°{u}.",
+                    h=int(round(high)), u=units.temp, l=int(round(low)))
         )
     elif high is not None:
-        parts.append(f"Highs near {int(round(high))}°{units.temp}.")
+        parts.append(lang.tr("Highs near {h}°{u}.", h=int(round(high)), u=units.temp))
 
     precip = _num(day.get("precipProbability"))
     if precip is not None and precip > 0.05:
@@ -558,47 +566,54 @@ def _narrative(day: dict, units: Units) -> str:
         if ptype in ("none", ""):
             ptype = "precipitation"
         accum = _num(day.get("precipAccumulation"))
-        sentence = f"About a {int(round(precip * 100))}% chance of {ptype}"
+        sentence = lang.tr("About a {p}% chance of {t}",
+                           p=int(round(precip * 100)), t=lang.tr(ptype))
         if accum and accum > 0.01:
-            sentence += f", with up to {accum:.2f} {units.accumulation} possible"
+            sentence += lang.tr(", with up to {a} {u} possible",
+                                a=f"{accum:.2f}", u=units.accumulation)
         parts.append(sentence + ".")
     elif precip is not None:
-        parts.append("Little to no precipitation expected.")
+        parts.append(lang.tr("Little to no precipitation expected."))
 
     wind = _num(day.get("windSpeed"))
     gust = _num(day.get("windGust"))
     if wind is not None:
         cardinal = format_cardinal(_num(day.get("windBearing")))
-        sentence = f"Winds {cardinal} near {int(round(wind))} {units.wind}"
+        sentence = lang.tr("Winds {c} near {w} {u}",
+                           c=cardinal, w=int(round(wind)), u=units.wind)
         if gust and gust > wind * 1.3:
-            sentence += f", gusting to {int(round(gust))} {units.wind}"
+            sentence += lang.tr(", gusting to {g} {u}",
+                                g=int(round(gust)), u=units.wind)
         parts.append(sentence + ".")
 
     humidity = _num(day.get("humidity"))
     dew = _num(day.get("dewPoint"))
     if humidity is not None:
-        sentence = f"Humidity around {int(round(humidity * 100))}%"
+        sentence = lang.tr("Humidity around {h}%", h=int(round(humidity * 100)))
         if dew is not None:
-            sentence += f" with a dew point near {int(round(dew))}°{units.temp}"
+            sentence += lang.tr(" with a dew point near {d}°{u}",
+                                d=int(round(dew)), u=units.temp)
         parts.append(sentence + ".")
 
     cloud = _num(day.get("cloudCover"))
     if cloud is not None:
         pct = int(round(cloud * 100))
         if pct <= 20:
-            descriptor = "mostly clear skies"
+            descriptor = lang.tr("mostly clear skies")
         elif pct <= 50:
-            descriptor = "partly cloudy skies"
+            descriptor = lang.tr("partly cloudy skies")
         elif pct <= 80:
-            descriptor = "mostly cloudy skies"
+            descriptor = lang.tr("mostly cloudy skies")
         else:
-            descriptor = "overcast skies"
-        parts.append(f"Expect {descriptor} at about {pct}% cloud cover.")
+            descriptor = lang.tr("overcast skies")
+        parts.append(lang.tr("Expect {d} at about {p}% cloud cover.",
+                             d=descriptor, p=pct))
 
     uv = _num(day.get("uvIndex"))
     if uv is not None and uv >= 6:
-        descriptor = "very high" if uv >= 8 else "high"
-        parts.append(f"UV index peaking at {int(round(uv))} ({descriptor}); sun protection advised.")
+        descriptor = lang.tr("very high") if uv >= 8 else lang.tr("high")
+        parts.append(lang.tr("UV index peaking at {u} ({d}); sun protection advised.",
+                             u=int(round(uv)), d=descriptor))
 
     return " ".join(parts)
 
@@ -620,8 +635,8 @@ def moon_phase_name(value: Optional[float]) -> str:
         return "--"
     for threshold, name in _MOON_PHASES:
         if v <= threshold:
-            return name
-    return "New Moon"
+            return lang.tr(name)
+    return lang.tr("New Moon")
 
 
 def build_almanac(payload: dict, units: Units) -> list[dict]:
@@ -683,14 +698,14 @@ def build_almanac(payload: dict, units: Units) -> list[dict]:
     if storm is not None:
         rows.append((
             "Nearest Storm",
-            "None nearby" if storm <= 0 else _measure(storm, units.distance, 0),
+            lang.tr("None nearby") if storm <= 0 else _measure(storm, units.distance, 0),
         ))
 
-    result = [{"name": name, "value": value} for name, value in rows]
+    result = [{"key": name, "name": lang.tr(name), "value": value} for name, value in rows]
     moon_frac = _num(today.get("moonPhase"))
     if moon_frac is not None:
         for row in result:
-            if row["name"] == "Moon Phase":
+            if row["key"] == "Moon Phase":
                 row["moon_phase"] = moon_frac
                 break
     return result
@@ -750,7 +765,7 @@ def build_alerts(payload: dict) -> list[dict]:
             region_text = ", ".join(str(r).strip() for r in regions if str(r).strip())
         else:
             region_text = ""
-        severity = str(item.get("severity") or "Unknown").title()
+        severity = str(item.get("severity") or lang.tr("Unknown")).title()
         out.append(
             {
                 "title": title,
@@ -769,7 +784,7 @@ def build_alerts(payload: dict) -> list[dict]:
 def alerts_ticker_text(alerts: Sequence[dict], limit: int = 6) -> str:
     """Condense alerts into one ticker string."""
     if not alerts:
-        return "No active weather alerts"
+        return lang.tr("No active weather alerts")
     chunks = []
     for alert in list(alerts)[: max(1, int(limit))]:
         title = alert.get("title") or ""

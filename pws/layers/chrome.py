@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from PIL import ImageDraw
 
-from pws import layout, theme
+from pws import lang, layout, theme
 from pws.core.layer import Layer
 
 
@@ -131,7 +131,7 @@ class ChromeLayer(Layer):
             # Fit the wordmark into whatever space the lockup leaves.
             mark_y = self.s(24) + theme.line_height(title_font) - self.s(4)
             available = (x + w) - cursor_x
-            text = self.wordmark.upper()
+            text = lang.tr(self.wordmark).upper()
             for size, track in ((17, 2), (16, 1), (14, 1), (13, 1)):
                 mark_font = theme.font(self.s(size, 8), "semibold")
                 tracking = self.s(track, 1)
@@ -149,7 +149,7 @@ class ChromeLayer(Layer):
     def _draw_page_title(self, draw, x: int, w: int) -> None:
         cx = x + w // 2
         label_font = theme.font(self.s(18, 8), "semibold")
-        theme.tracked_center(draw, cx, self.s(layout.LABEL_Y), "NOW SHOWING",
+        theme.tracked_center(draw, cx, self.s(layout.LABEL_Y), lang.tr("NOW SHOWING"),
                              label_font, fill=theme.TEXT_DIM, tracking=self.s(3, 1))
         if not self.page_title:
             return
