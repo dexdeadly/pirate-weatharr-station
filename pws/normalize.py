@@ -247,6 +247,24 @@ def precip_type_label(raw: Any) -> str:
     return lang.tr(key) if key in ("rain", "snow", "sleet", "hail", "ice") else key.title()
 
 
+def condition_label(icon: Any, summary: Any, fallback: str = "Current conditions",
+                    is_day: bool = True) -> str:
+    """
+    Condition text for a forecast point.
+
+    In English this is the API's own summary, unchanged. In Spanish the API
+    summary is English prose (e.g. "Misty", "Partly cloudy throughout the
+    day"), so it is replaced by a translated label derived from the machine-
+    readable icon key instead.
+    """
+    if lang.current() == "es":
+        key = icon_key(icon, is_day)
+        label = lang.tr("cond:" + key)
+        if label != "cond:" + key:
+            return label
+    return summary_text(summary, fallback)
+
+
 # ---------------------------------------------------------------------------
 # Current conditions
 # ---------------------------------------------------------------------------
@@ -337,7 +355,7 @@ def build_current(payload: dict, units: Units, location_name: str) -> dict:
 
     return {
         "location": location_name,
-        "summary": summary_text(cur.get("summary")),
+        "summary": condition_label(icon_raw, cur.get("summary"), is_day=is_day),
         "icon": icon_key(icon_raw, is_day),
         "is_day": is_day,
         # Raw values for colour ramps / graphs
@@ -443,7 +461,7 @@ def build_daily_days(payload: dict, units: Units, limit: int = 7) -> list[dict]:
                 "high_f": to_fahrenheit(high, units),
                 "low_f": to_fahrenheit(low, units),
                 "unit": units.temp,
-                "short": summary_text(entry.get("summary"), ""),
+                "short": condition_label(entry.get("icon"), entry.get("summary"), ""),
                 "icon": icon_key(entry.get("icon"), True),
                 "precip": None if precip is None else precip * 100.0,
                 "is_day": True,
@@ -529,7 +547,7 @@ def build_forecast_periods(payload: dict, units: Units, limit: int = 2) -> list[
                 "moon_phase": moon_phase_name(entry.get("moonPhase")),
                 "sunrise": _clock(entry.get("sunriseTime")),
                 "sunset": _clock(entry.get("sunsetTime")),
-                "short": summary_text(entry.get("summary"), ""),
+                "short": condition_label(entry.get("icon"), entry.get("summary"), ""),
                 "detailed": _narrative(entry, units),
                 "icon": icon_key(entry.get("icon"), True),
                 "is_day": True,
@@ -546,7 +564,7 @@ def _narrative(day: dict, units: Units) -> str:
     prose forecast, so we build the longer text ourselves from the numbers.
     """
     parts: list[str] = []
-    summary = summary_text(day.get("summary"), "")
+    summary = condition_label(day.get("icon"), day.get("summary"), "")
     if summary:
         parts.append(summary.rstrip(".") + ".")
 
@@ -817,7 +835,7 @@ def build_city_point(name: str, lat: float, lon: float, payload: dict,
         "lon": float(lon),
         "temp": _deg(temp, units),
         "temp_f": to_fahrenheit(temp, units),
-        "condition": summary_text(cur.get("summary"), ""),
+        "condition": condition_label(icon_raw, cur.get("summary"), "", is_day=is_day),
         "icon": icon_key(icon_raw, is_day),
         "is_day": is_day,
     }
@@ -839,7 +857,7 @@ def build_city_forecast_point(name: str, lat: float, lon: float, payload: dict,
         "lon": float(lon),
         "forecast_temp": _deg(high, units),
         "temp_f": to_fahrenheit(high, units),
-        "forecast_short": summary_text(day.get("summary"), ""),
+        "forecast_short": condition_label(day.get("icon"), day.get("summary"), "", is_day=True),
         "icon": icon_key(day.get("icon"), True),
         "is_day": True,
     }

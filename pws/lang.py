@@ -65,6 +65,7 @@ _ES = {
     "until {when}": "hasta {when}",
     "Alert status unavailable - weather data could not be refreshed":
         "Estado de alertas no disponible: no se pudieron actualizar los datos meteorológicos",
+    "No active weather alerts": "No hay alertas meteorológicas activas",
     "No active weather alerts for this area": "No hay alertas meteorológicas activas para esta zona",
 
     # -- current conditions ----------------------------------------------
@@ -194,8 +195,7 @@ _ES = {
         "Índice UV máximo de {u} ({d}); se recomienda protección solar.",
 
     # -- regional / WMO summaries ----------------------------------------
-    "Clear": "Despejado",
-    "Mostly Clear": "Mayormente despejado",
+    "Clear": "Despejado",    "Mostly Clear": "Mayormente despejado",
     "Partly Cloudy": "Parcialmente nublado",
     "Overcast": "Cubierto",
     "Fog": "Niebla",
@@ -216,6 +216,20 @@ _ES = {
     "Heavy Showers": "Chubascos intensos",
     "Snow Showers": "Chubascos de nieve",
     "Thunderstorms": "Tormentas",
+
+    # -- condition labels (icon-key based; replaces the API's English summary
+    #    when the channel is in Spanish). Keys are prefixed "cond:" so they
+    #    don't collide with the precip-type keys ("rain"/"snow") above.
+    "cond:clear-day": "Despejado",
+    "cond:clear-night": "Despejado",
+    "cond:partly-cloudy-day": "Parcialmente nublado",
+    "cond:partly-cloudy-night": "Parcialmente nublado",
+    "cond:cloudy": "Nublado",
+    "cond:fog": "Niebla",
+    "cond:rain": "Lluvia",
+    "cond:snow": "Nieve",
+    "cond:wind": "Ventoso",
+    "cond:thunderstorm": "Tormenta eléctrica",
 
     # -- fallbacks / misc ------------------------------------------------
     "Current conditions": "Condiciones actuales",
