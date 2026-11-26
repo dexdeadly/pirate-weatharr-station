@@ -68,6 +68,9 @@ except Exception:  # pragma: no cover - Windows
 
 _START_LOCK = threading.Lock()
 
+#: How often a process waiting for the cross-process start lock retries.
+_START_LOCK_POLL_SEC = 0.2
+
 #: Seconds after the plugin loads before auto-start checks the stations: long
 #: enough for Dispatcharr's DB and workers to be up after a container start.
 _AUTOSTART_DELAY_SEC = 20
@@ -1377,7 +1380,19 @@ class Plugin:
             try:
                 if fcntl:
                     lock_file = open(self._start_lock_path, "a+b")
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                    # Poll instead of blocking. Under uWSGI's gevent loop
+                    # (Dispatcharr's default) a blocking flock() is a raw
+                    # syscall that freezes the whole worker, including the
+                    # greenlet that already holds the lock through another
+                    # file handle, so the worker deadlocks on itself and every
+                    # other process queues behind it. time.sleep() is
+                    # gevent-patched, so polling lets the holder finish.
+                    while True:
+                        try:
+                            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                            break
+                        except BlockingIOError:
+                            time.sleep(_START_LOCK_POLL_SEC)
                 yield
             finally:
                 if lock_file and fcntl:
